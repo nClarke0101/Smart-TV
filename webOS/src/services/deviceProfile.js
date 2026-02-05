@@ -283,19 +283,37 @@ const buildDirectPlayProfiles = (caps) => {
 	if (caps.vp9) mp4VideoCodecs.push('vp9');
 	if (caps.av1) mp4VideoCodecs.push('av1');
 
-	// Build audio codecs based on actual device capabilities
-	const videoAudioCodecs = ['aac', 'mp3', 'flac', 'pcm_s16le', 'pcm_s24le'];
-	if (caps.ac3) videoAudioCodecs.push('ac3');
-	if (caps.eac3) videoAudioCodecs.push('eac3');
-	if (caps.dts) {
-		videoAudioCodecs.push('dca', 'dts');
-	}
+	// Per-container audio codecs based on LG's official AV format docs.
+	// Different containers support different audio codecs on webOS.
+
+	// MP4/M4V/MOV: ac3, eac3, aac, mp3 (no PCM, FLAC, or Vorbis)
+	const mp4AudioCodecs = ['aac', 'mp3'];
+	if (caps.ac3) mp4AudioCodecs.push('ac3');
+	if (caps.eac3) mp4AudioCodecs.push('eac3');
+	if (caps.dts) mp4AudioCodecs.push('dca', 'dts');
+
+	// MKV: ac3, eac3, aac, pcm, mp3, vorbis, opus (24+), dts (version-dependent)
+	const mkvAudioCodecs = ['aac', 'mp3', 'flac', 'pcm_s16le', 'pcm_s24le', 'vorbis'];
+	if (caps.ac3) mkvAudioCodecs.push('ac3');
+	if (caps.eac3) mkvAudioCodecs.push('eac3');
+	if (caps.dts) mkvAudioCodecs.push('dca', 'dts');
+	if (caps.webosVersion >= 24) mkvAudioCodecs.push('opus');
+
+	// TS: ac3, eac3, aac, pcm, mp3 (no FLAC or Vorbis)
+	const tsAudioCodecs = ['aac', 'mp3', 'pcm_s16le', 'pcm_s24le'];
+	if (caps.ac3) tsAudioCodecs.push('ac3');
+	if (caps.eac3) tsAudioCodecs.push('eac3');
+	if (caps.dts) tsAudioCodecs.push('dca', 'dts');
+
+	// AVI: ac3, mp3, lpcm, adpcm, dts (webOS 4/4.5 only for DTS)
+	const aviAudioCodecs = ['mp3', 'pcm_s16le', 'pcm_s24le'];
+	if (caps.ac3) aviAudioCodecs.push('ac3');
+	if (caps.dts) aviAudioCodecs.push('dca', 'dts');
 
 	console.log('[deviceProfile] Building DirectPlay profiles - caps.eac3:', caps.eac3, 'caps.webosVersion:', caps.webosVersion);
-	console.log('[deviceProfile] videoAudioCodecs:', videoAudioCodecs);
-	if (caps.truehd) videoAudioCodecs.push('truehd');
-	if (caps.webosVersion >= 24) videoAudioCodecs.push('opus');
-	videoAudioCodecs.push('vorbis');
+	console.log('[deviceProfile] mp4AudioCodecs:', mp4AudioCodecs);
+	console.log('[deviceProfile] mkvAudioCodecs:', mkvAudioCodecs);
+	console.log('[deviceProfile] tsAudioCodecs:', tsAudioCodecs);
 
 	const webmVideoCodecs = ['vp8'];
 	if (caps.vp9) webmVideoCodecs.push('vp9');
@@ -316,15 +334,21 @@ const buildDirectPlayProfiles = (caps) => {
 		Container: 'mp4,m4v',
 		Type: 'Video',
 		VideoCodec: mp4VideoCodecs.join(','),
-		AudioCodec: videoAudioCodecs.join(',')
+		AudioCodec: mp4AudioCodecs.join(',')
 	});
 
 	if (caps.mkv) {
+		// MKV supports broader video codecs per LG docs: MPEG-2, MPEG-4, H.264, VP8, VP9, HEVC, AV1
+		const mkvVideoCodecs = ['h264', 'mpeg4', 'mpeg2video', 'vp8'];
+		if (caps.hevc) mkvVideoCodecs.push('hevc');
+		if (caps.vp9) mkvVideoCodecs.push('vp9');
+		if (caps.av1) mkvVideoCodecs.push('av1');
+
 		profiles.push({
 			Container: 'mkv',
 			Type: 'Video',
-			VideoCodec: mp4VideoCodecs.join(','),
-			AudioCodec: videoAudioCodecs.join(',')
+			VideoCodec: mkvVideoCodecs.join(','),
+			AudioCodec: mkvAudioCodecs.join(',')
 		});
 	}
 
@@ -337,7 +361,7 @@ const buildDirectPlayProfiles = (caps) => {
 			Container: 'ts,mpegts',
 			Type: 'Video',
 			VideoCodec: tsVideoCodecs.join(','),
-			AudioCodec: videoAudioCodecs.join(',')
+			AudioCodec: tsAudioCodecs.join(',')
 		});
 	}
 
@@ -345,7 +369,7 @@ const buildDirectPlayProfiles = (caps) => {
 		Container: 'm2ts',
 		Type: 'Video',
 		VideoCodec: 'h264,vc1,mpeg2video',
-		AudioCodec: videoAudioCodecs.join(',')
+		AudioCodec: tsAudioCodecs.join(',')
 	});
 
 	if (caps.asf || caps.wmv) {
@@ -364,14 +388,14 @@ const buildDirectPlayProfiles = (caps) => {
 	}
 
 	if (caps.avi) {
-		const aviVideoCodecs = ['h264'];
-		if (caps.hevc) aviVideoCodecs.push('hevc');
+		// AVI per LG docs: Xvid, H.264/AVC, Motion JPEG, MPEG-4
+		const aviVideoCodecs = ['h264', 'mpeg4', 'mjpeg'];
 
 		profiles.push({
 			Container: 'avi',
 			Type: 'Video',
 			VideoCodec: aviVideoCodecs.join(','),
-			AudioCodec: videoAudioCodecs.join(',')
+			AudioCodec: aviAudioCodecs.join(',')
 		});
 	}
 
@@ -384,11 +408,16 @@ const buildDirectPlayProfiles = (caps) => {
 		});
 	}
 
+	// MOV per LG docs: H.264/AVC, MPEG-4, HEVC, AV1
+	const movVideoCodecs = ['h264', 'mpeg4'];
+	if (caps.hevc) movVideoCodecs.push('hevc');
+	if (caps.av1) movVideoCodecs.push('av1');
+
 	profiles.push({
 		Container: 'mov',
 		Type: 'Video',
-		VideoCodec: 'h264',
-		AudioCodec: videoAudioCodecs.join(',')
+		VideoCodec: movVideoCodecs.join(','),
+		AudioCodec: mp4AudioCodecs.join(',')
 	});
 
 	['mp3', 'flac', 'aac', 'ogg', 'wav', 'wma'].forEach(format => {
@@ -419,11 +448,12 @@ const buildDirectPlayProfiles = (caps) => {
 	});
 
 	if (caps.nativeHls) {
+		// HLS uses TS segments, so use TS-compatible audio codecs
 		profiles.push({
 			Container: 'hls',
 			Type: 'Video',
 			VideoCodec: mp4VideoCodecs.join(','),
-			AudioCodec: videoAudioCodecs.join(',')
+			AudioCodec: tsAudioCodecs.join(',')
 		});
 	}
 
