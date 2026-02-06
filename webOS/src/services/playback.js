@@ -20,7 +20,7 @@ const getApiForItem = (item) => {
 	return jellyfinApi.api;
 };
 
-// Get server credentials from item or fallback to current
+// Get server credentials from item (only for cross-server items)
 const getServerCredentials = (item) => {
 	if (item?._serverUrl && item?._serverAccessToken) {
 		return {
@@ -29,11 +29,7 @@ const getServerCredentials = (item) => {
 			userId: item._serverUserId
 		};
 	}
-	return {
-		serverUrl: jellyfinApi.getServerUrl(),
-		accessToken: jellyfinApi.getApiKey(),
-		userId: jellyfinApi.getUserId?.() || null
-	};
+	return null;
 };
 
 const selectMediaSource = (mediaSources, capabilities, options) => {
@@ -248,31 +244,24 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	const deviceProfile = await getJellyfinDeviceProfile();
 	const capabilities = await getDeviceCapabilities();
 
-	// Cross-server support: use item's server if available
+	// Cross-server: use item's server if available
 	const api = options.item ? getApiForItem(options.item) : jellyfinApi.api;
 	const creds = options.item ? getServerCredentials(options.item) : null;
 
-	// Use provided bitrate or default (0 means no limit for direct play, but we need a limit for transcode)
 	const maxBitrate = options.maxBitrate || DEFAULT_MAX_BITRATE;
 
-	// webOS 5 has issues with FFmpeg transcodes that start from a non-zero position
-	// (causes "unfixable negative timestamp" errors). For webOS 5 transcodes,
-	// we request from position 0 and do client-side seeking after load.
 	const requestedStartTime = options.startPositionTicks || 0;
-	const isWebOS5 = capabilities.webosVersion === 5;
-	const needsTranscode = options.enableDirectPlay === false || options.enableDirectStream === false;
-	const useClientSideSeek = isWebOS5 && needsTranscode && requestedStartTime > 0;
-
-	// For webOS 5 transcodes with resume, request from 0 to avoid negative timestamp issues
-	const apiStartTime = useClientSideSeek ? 0 : requestedStartTime;
-
-	if (useClientSideSeek) {
-		console.log('[playback] webOS 5 transcode with resume - will use client-side seek from', requestedStartTime);
-	}
+	console.log('[playback] getPlaybackInfo called:', {
+		itemId,
+		startPositionTicks: requestedStartTime,
+		maxBitrate,
+		enableDirectPlay: options.enableDirectPlay !== false,
+		enableTranscoding: options.enableTranscoding !== false
+	});
 
 	let playbackInfo = await api.getPlaybackInfo(itemId, {
 		DeviceProfile: deviceProfile,
-		StartTimeTicks: apiStartTime,
+		StartTimeTicks: requestedStartTime,
 		AutoOpenLiveStream: true,
 		EnableDirectPlay: options.enableDirectPlay !== false,
 		EnableDirectStream: options.enableDirectStream !== false,
@@ -289,35 +278,6 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 
 	let mediaSource = selectMediaSource(playbackInfo.MediaSources, capabilities, options);
 	let playMethod = determinePlayMethod(mediaSource, capabilities);
-
-	// Check again if this will actually be a transcode and we're on webOS 5
-	const willTranscode = playMethod === PlayMethod.Transcode;
-	const clientSeekRequired = isWebOS5 && willTranscode && requestedStartTime > 0;
-
-	if (clientSeekRequired && !useClientSideSeek) {
-		// We didn't anticipate needing a transcode, but now we do
-		// Re-request from position 0
-		console.log('[playback] webOS 5 transcode detected after initial request - re-requesting from position 0');
-		playbackInfo = await api.getPlaybackInfo(itemId, {
-			DeviceProfile: deviceProfile,
-			StartTimeTicks: 0,
-			AutoOpenLiveStream: true,
-			EnableDirectPlay: false,
-			EnableDirectStream: false,
-			EnableTranscoding: true,
-			AudioStreamIndex: options.audioStreamIndex,
-			SubtitleStreamIndex: options.subtitleStreamIndex,
-			MaxStreamingBitrate: maxBitrate,
-			MediaSourceId: options.mediaSourceId
-		});
-
-		if (!playbackInfo.MediaSources?.length) {
-			throw new Error('No playable media source found');
-		}
-
-		mediaSource = playbackInfo.MediaSources[0];
-		playMethod = PlayMethod.Transcode;
-	}
 
 	// Log video stream info including HDR type
 	const videoStream = mediaSource.MediaStreams?.find(s => s.Type === 'Video');
@@ -342,8 +302,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	// If we determined we need transcoding but server didn't provide a TranscodingUrl,
 	// re-request with DirectPlay/DirectStream disabled to force transcoding
 	if (playMethod === PlayMethod.Transcode && !mediaSource.TranscodingUrl) {
-		// For webOS 5, always request from position 0 for transcodes
-		const forceStartTime = isWebOS5 ? 0 : (options.startPositionTicks || 0);
+		const forceStartTime = options.startPositionTicks || 0;
 		console.log('[playback] Need transcode but no TranscodingUrl - re-requesting with transcoding forced');
 		playbackInfo = await api.getPlaybackInfo(itemId, {
 			DeviceProfile: deviceProfile,
@@ -367,13 +326,8 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		console.log('[playback] After forcing transcode - TranscodingUrl:', mediaSource.TranscodingUrl ? 'present' : 'none');
 	}
 
-	// Determine if client needs to seek after load (webOS 5 transcode resume workaround)
-	const finalClientSeekRequired = isWebOS5 && playMethod === PlayMethod.Transcode && requestedStartTime > 0;
-	if (finalClientSeekRequired) {
-		console.log('[playback] Client-side seek required to position:', requestedStartTime);
-	}
-
 	const url = buildPlaybackUrl(itemId, mediaSource, playbackInfo.PlaySessionId, playMethod, creds);
+
 	const audioStreams = extractAudioStreams(mediaSource);
 	const subtitleStreams = extractSubtitleStreams(mediaSource);
 	const chapters = extractChapters(mediaSource);
@@ -389,7 +343,6 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		audioStreamIndex: options.audioStreamIndex ?? mediaSource.DefaultAudioStreamIndex,
 		subtitleStreamIndex: options.subtitleStreamIndex ?? mediaSource.DefaultSubtitleStreamIndex,
 		maxBitrate: options.maxBitrate,
-		// Cross-server support: store server credentials for progress reporting
 		serverCredentials: creds
 	};
 
@@ -421,9 +374,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		chapters,
 		defaultAudioStreamIndex: mediaSource.DefaultAudioStreamIndex,
 		defaultSubtitleStreamIndex: mediaSource.DefaultSubtitleStreamIndex,
-		// webOS 5 workaround: if true, player must seek to clientSeekPositionTicks after video loads
-		clientSeekRequired: finalClientSeekRequired,
-		clientSeekPositionTicks: finalClientSeekRequired ? requestedStartTime : 0
+		startPositionTicks: requestedStartTime
 	};
 };
 
@@ -550,9 +501,43 @@ export const getMediaSegments = async (itemId) => {
 export const getNextEpisode = async (item) => {
 	if (item.Type !== 'Episode' || !item.SeriesId) return null;
 	try {
+		// Try NextUp API first - returns the next unwatched episode
 		const result = await jellyfinApi.api.getNextEpisode(item.SeriesId, item.Id);
-		return result.Items?.[0] || null;
+		const nextUp = result.Items?.[0];
+
+		// If NextUp returned a different episode, use it
+		if (nextUp && nextUp.Id !== item.Id) {
+			return nextUp;
+		}
+
+		// NextUp returned the same episode (current episode not marked as watched yet)
+		// or returned nothing. Fall back to fetching episodes sequentially.
+		const seasonId = item.SeasonId || item.ParentId;
+		if (!seasonId) return null;
+
+		const episodesResult = await jellyfinApi.api.getEpisodes(item.SeriesId, seasonId);
+		const episodes = episodesResult.Items || [];
+		const currentIndex = episodes.findIndex(ep => ep.Id === item.Id);
+
+		if (currentIndex >= 0 && currentIndex < episodes.length - 1) {
+			// Return the next episode in the same season
+			return episodes[currentIndex + 1];
+		}
+
+		// At end of season - try the next season
+		const seasonsResult = await jellyfinApi.api.getSeasons(item.SeriesId);
+		const seasons = seasonsResult.Items || [];
+		const currentSeasonIndex = seasons.findIndex(s => s.Id === seasonId);
+
+		if (currentSeasonIndex >= 0 && currentSeasonIndex < seasons.length - 1) {
+			const nextSeason = seasons[currentSeasonIndex + 1];
+			const nextSeasonEpisodes = await jellyfinApi.api.getEpisodes(item.SeriesId, nextSeason.Id);
+			return nextSeasonEpisodes.Items?.[0] || null;
+		}
+
+		return null;
 	} catch (e) {
+		console.warn('[playback] Failed to get next episode:', e.message);
 		return null;
 	}
 };
@@ -583,7 +568,16 @@ export const reportStart = async (positionTicks = 0) => {
 	if (!currentSession) return;
 
 	try {
-		await jellyfinApi.api.reportPlaybackStart({
+		// Use session's server credentials for cross-server support
+		const api = currentSession.serverCredentials
+			? jellyfinApi.createApiForServer(
+				currentSession.serverCredentials.serverUrl,
+				currentSession.serverCredentials.accessToken,
+				currentSession.serverCredentials.userId
+			)
+			: jellyfinApi.api;
+
+		await api.reportPlaybackStart({
 			ItemId: currentSession.itemId,
 			PlaySessionId: currentSession.playSessionId,
 			MediaSourceId: currentSession.mediaSourceId,

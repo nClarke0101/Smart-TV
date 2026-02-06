@@ -328,15 +328,18 @@ const AppContent = (props) => {
 	}, [navigateTo]);
 
 	const [playbackOptions, setPlaybackOptions] = useState(null);
+	const [isResume, setIsResume] = useState(false);
 
 	const handlePlay = useCallback((item, resume, options) => {
 		setPlayingItem(item);
 		setPlaybackOptions(options || null);
+		setIsResume(!!resume);
 		navigateTo(PANELS.PLAYER);
 	}, [navigateTo]);
 
 	const handlePlayNext = useCallback((item) => {
 		setPlayingItem(item);
+		setIsResume(false);
 	}, []);
 
 	const handlePlayerEnd = useCallback(() => {
@@ -553,6 +556,7 @@ const AppContent = (props) => {
 						{panelIndex === PANELS.PLAYER && playingItem && (
 							<Player
 								item={playingItem}
+								resume={isResume}
 								initialAudioIndex={playbackOptions?.audioStreamIndex}
 								initialSubtitleIndex={playbackOptions?.subtitleStreamIndex}
 								onEnded={handlePlayerEnd}

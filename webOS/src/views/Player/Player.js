@@ -6,6 +6,8 @@ import Button from '@enact/sandstone/Button';
 import Scroller from '@enact/sandstone/Scroller';
 import Hls from 'hls.js';
 import * as playback from '../../services/playback';
+import {getImageUrl} from '../../utils/helpers';
+import {getServerUrl} from '../../services/jellyfinApi';
 import {
 	initLunaAPI,
 	registerAppStateObserver,
@@ -25,6 +27,13 @@ const SpottableDiv = Spottable('div');
 const ModalContainer = SpotlightContainerDecorator({
 	enterTo: 'default-element',
 	defaultElement: '[data-selected="true"]',
+	straightOnly: false,
+	preserveId: true
+}, 'div');
+
+const NextEpisodeContainer = SpotlightContainerDecorator({
+	enterTo: 'default-element',
+	defaultElement: '[data-spot-default="true"]',
 	straightOnly: false,
 	preserveId: true
 }, 'div');
@@ -53,7 +62,6 @@ const formatEndTime = (remainingSeconds) => {
 // Playback speed options
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-// Quality presets (bitrate in bps)
 const QUALITY_PRESETS = [
 	{label: 'Auto', value: null},
 	{label: '4K (60 Mbps)', value: 60000000, minRes: 3840},
@@ -67,7 +75,6 @@ const QUALITY_PRESETS = [
 
 const CONTROLS_HIDE_DELAY = 5000;
 
-// SVG Icon components
 const IconPlay = () => (
 	<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
 		<path d="M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z"/>
@@ -140,7 +147,7 @@ const IconInfo = () => (
 	</svg>
 );
 
-const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack, onPlayNext}) => {
+const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded, onBack, onPlayNext}) => {
 	const {settings} = useSettings();
 
 	const [mediaUrl, setMediaUrl] = useState(null);
@@ -186,6 +193,12 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 	const nextEpisodeTimerRef = useRef(null);
 	const unregisterAppStateRef = useRef(null);
 	const controlsTimeoutRef = useRef(null);
+	const hlsRecoveryRef = useRef({ attempts: 0, lastErrorTime: 0 });
+	const lastSeekTargetRef = useRef(null);
+	const seekingTranscodeRef = useRef(false);
+	const seekDebounceTimerRef = useRef(null);
+	const transcodeOffsetTicksRef = useRef(0);
+	const transcodeOffsetDetectedRef = useRef(true);
 
 	const topButtons = useMemo(() => [
 		{id: 'playPause', icon: isPaused ? <IconPlay /> : <IconPause />, label: isPaused ? 'Play' : 'Pause', action: 'playPause'},
@@ -292,8 +305,25 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			setIsLoading(true);
 			setError(null);
 
+			setShowNextEpisode(false);
+			setShowSkipCredits(false);
+			setNextEpisodeCountdown(null);
+			setShowSkipIntro(false);
+			setNextEpisode(null);
+			if (nextEpisodeTimerRef.current) {
+				clearInterval(nextEpisodeTimerRef.current);
+				nextEpisodeTimerRef.current = null;
+			}
+
 			try {
-				const startPosition = item.UserData?.PlaybackPositionTicks || 0;
+				const savedPosition = item.UserData?.PlaybackPositionTicks || 0;
+				const startPosition = resume !== false ? savedPosition : 0;
+				console.log('[Player] Start position:', {
+					resume,
+					savedPosition,
+					startPosition,
+					hasUserData: !!item.UserData
+				});
 				const result = await playback.getPlaybackInfo(item.Id, {
 					startPositionTicks: startPosition,
 					maxBitrate: selectedQuality || settings.maxBitrate,
@@ -309,24 +339,26 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				setMediaSourceId(result.mediaSourceId);
 				playSessionRef.current = result.playSessionId;
 
-				// For webOS 5 transcodes, server sends stream from position 0 to avoid
-				// FFmpeg negative timestamp issues. We need to seek client-side.
-				if (result.clientSeekRequired) {
-					console.log('[Player] Client-side seek required (webOS 5 workaround) to:', result.clientSeekPositionTicks);
-					positionRef.current = result.clientSeekPositionTicks;
+				positionRef.current = startPosition;
+				hlsRecoveryRef.current = { attempts: 0, lastErrorTime: 0 };
+				lastSeekTargetRef.current = null;
+				seekingTranscodeRef.current = false;
+
+				if (result.playMethod === 'Transcode' && startPosition > 0) {
+					transcodeOffsetTicksRef.current = startPosition;
+					transcodeOffsetDetectedRef.current = false;
 				} else {
-					positionRef.current = startPosition;
+					transcodeOffsetTicksRef.current = 0;
+					transcodeOffsetDetectedRef.current = true;
 				}
 
 				runTimeRef.current = result.runTimeTicks || 0;
 				setDuration((result.runTimeTicks || 0) / 10000000);
 
-				// Set streams
 				setAudioStreams(result.audioStreams || []);
 				setSubtitleStreams(result.subtitleStreams || []);
 				setChapters(result.chapters || []);
 
-				// Default audio
 				const defaultAudio = result.audioStreams?.find(s => s.isDefault);
 				if (initialAudioIndex !== undefined && initialAudioIndex !== null) {
 					setSelectedAudioIndex(initialAudioIndex);
@@ -334,9 +366,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					setSelectedAudioIndex(defaultAudio.index);
 				}
 
-				// Handle subtitles based on settings or initial selection
-				// On webOS, we fetch subtitle data as JSON and render via custom elements
-				// because native <track> elements don't work reliably
 				console.log('[Player] === SUBTITLE SELECTION START ===');
 				console.log('[Player] initialSubtitleIndex:', initialSubtitleIndex);
 				console.log('[Player] subtitleMode:', settings.subtitleMode);
@@ -419,7 +448,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				}
 				console.log('[Player] === SUBTITLE SELECTION END ===');
 
-				// Build title and subtitle
 				let displayTitle = item.Name;
 				let displaySubtitle = '';
 				if (item.SeriesName) {
@@ -429,13 +457,11 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				setTitle(displayTitle);
 				setSubtitle(displaySubtitle);
 
-				// Load media segments (intro/credits markers)
 				if (settings.skipIntro) {
 					const segments = await playback.getMediaSegments(item.Id);
 					setMediaSegments(segments);
 				}
 
-				// Load next episode for TV shows
 				if (item.Type === 'Episode') {
 					const next = await playback.getNextEpisode(item);
 					setNextEpisode(next);
@@ -455,10 +481,18 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		return () => {
 			console.log('[Player] Cleanup running - unmounting or re-rendering');
 
-			// Report stop to server with current position
-			// This ensures the playback position is saved even if user exits unexpectedly
-			if (positionRef.current > 0) {
-				playback.reportStop(positionRef.current);
+			const videoTime = videoElement ? videoElement.currentTime : 0;
+			const videoTicks = Math.floor(videoTime * 10000000) + transcodeOffsetTicksRef.current;
+			const currentPos = videoTicks > 0 ? videoTicks : positionRef.current;
+
+			const intendedStart = positionRef.current;
+			const playedMeaningfully = videoTicks > 100000000;
+			if (currentPos > 0 && (playedMeaningfully || intendedStart === 0)) {
+				console.log('[Player] Reporting stop at position:', currentPos, 'ticks');
+				playback.reportStop(currentPos);
+			} else {
+				console.log('[Player] Skipping reportStop - position too small:', currentPos,
+					'videoTime:', videoTime, 'intendedStart:', intendedStart);
 			}
 
 			playback.stopProgressReporting();
@@ -470,21 +504,103 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			if (controlsTimeoutRef.current) {
 				clearTimeout(controlsTimeoutRef.current);
 			}
+			if (seekDebounceTimerRef.current) {
+				clearTimeout(seekDebounceTimerRef.current);
+			}
 
-			// Release hardware decoder on unmount
 			cleanupVideoElement(videoElement);
 		};
-	}, [item, selectedQuality, settings.maxBitrate, settings.preferTranscode, settings.subtitleMode, settings.skipIntro, initialAudioIndex, initialSubtitleIndex]);
+	}, [item, resume, selectedQuality, settings.maxBitrate, settings.preferTranscode, settings.subtitleMode, settings.skipIntro, initialAudioIndex, initialSubtitleIndex]);
 
-	// Log when mediaUrl changes
 	useEffect(() => {
 		if (mediaUrl) {
 			console.log('[Player] mediaUrl set:', mediaUrl);
 		}
 	}, [mediaUrl]);
 
-	// Set video source and attributes properly for webOS
-	// Must also depend on isLoading because video element only exists when !isLoading
+	const seekInTranscode = useCallback(async (seekPositionTicks) => {
+		if (seekingTranscodeRef.current) return;
+		seekingTranscodeRef.current = true;
+
+		if (seekDebounceTimerRef.current) {
+			clearTimeout(seekDebounceTimerRef.current);
+			seekDebounceTimerRef.current = null;
+		}
+
+		console.log('[Player] seekInTranscode: requesting new stream at', seekPositionTicks, 'ticks (', seekPositionTicks / 10000000, 's)');
+
+		try {
+			if (hlsRef.current) {
+				hlsRef.current.destroy();
+				hlsRef.current = null;
+			}
+
+			const result = await playback.getPlaybackInfo(item.Id, {
+				startPositionTicks: seekPositionTicks,
+				maxBitrate: selectedQuality || settings.maxBitrate,
+				enableDirectPlay: false,
+				enableDirectStream: false,
+				enableTranscoding: true,
+				item: item
+			});
+
+			if (result.url) {
+				positionRef.current = seekPositionTicks;
+				lastSeekTargetRef.current = seekPositionTicks;
+				transcodeOffsetTicksRef.current = seekPositionTicks;
+				transcodeOffsetDetectedRef.current = false;
+
+				hlsRecoveryRef.current = { attempts: 0, lastErrorTime: 0 };
+
+				setMediaUrl(result.url);
+				setPlayMethod(result.playMethod);
+				setMimeType(result.mimeType || 'video/mp4');
+				playSessionRef.current = result.playSessionId;
+
+				console.log('[Player] seekInTranscode: new stream loaded at', seekPositionTicks / 10000000, 'seconds');
+			}
+		} catch (err) {
+			console.error('[Player] seekInTranscode failed:', err);
+			setError('Failed to seek - please try again');
+		} finally {
+			seekingTranscodeRef.current = false;
+		}
+	}, [item, selectedQuality, settings.maxBitrate]);
+
+	// Seek relative to current position with debounced transcode re-requests.
+	// updateSeekPosition: also update the seekbar UI during scrubbing.
+	const seekByOffset = useCallback((deltaSec, updateSeekPosition) => {
+		const baseTime = (playMethod === 'Transcode')
+			? ((lastSeekTargetRef.current != null ? lastSeekTargetRef.current : positionRef.current) / 10000000)
+			: (videoRef.current ? videoRef.current.currentTime : 0);
+		const newTime = Math.max(0, Math.min(duration, baseTime + deltaSec));
+		const newTicks = Math.floor(newTime * 10000000);
+		if (updateSeekPosition) setSeekPosition(newTicks);
+		positionRef.current = newTicks;
+		lastSeekTargetRef.current = newTicks;
+		if (playMethod === 'Transcode') {
+			setCurrentTime(newTime);
+			if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
+			seekingTranscodeRef.current = false;
+			seekDebounceTimerRef.current = setTimeout(() => {
+				seekInTranscode(lastSeekTargetRef.current);
+			}, 600);
+		} else if (videoRef.current) {
+			videoRef.current.currentTime = newTime;
+		}
+	}, [duration, playMethod, seekInTranscode]);
+
+	const seekToTicks = useCallback((ticks) => {
+		if (!videoRef.current) return;
+		positionRef.current = ticks;
+		lastSeekTargetRef.current = ticks;
+		if (playMethod === 'Transcode') {
+			seekInTranscode(ticks);
+		} else {
+			videoRef.current.currentTime = ticks / 10000000;
+		}
+	}, [playMethod, seekInTranscode]);
+
 	useEffect(() => {
 		const video = videoRef.current;
 		console.log('[Player] Video src useEffect - video exists:', !!video, 'mediaUrl:', !!mediaUrl, 'isLoading:', isLoading);
@@ -498,12 +614,9 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		video.setAttribute('webkit-playsinline', '');
 		video.setAttribute('playsinline', '');
 		video.setAttribute('preload', 'auto');
-		// Note: Don't set crossOrigin for local Jellyfin servers - it can break webOS 4
 
-		// Check if this is HLS content
 		const isHls = mediaUrl.includes('.m3u8') || mimeType === 'application/x-mpegURL';
 
-		// Cleanup any existing HLS instance
 		if (hlsRef.current) {
 			console.log('[Player] Destroying existing HLS instance');
 			hlsRef.current.destroy();
@@ -511,11 +624,13 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		}
 
 		const setSourceAndPlay = async () => {
-			// For HLS content, prefer hls.js over native - webOS claims native support but fails
 			if (isHls) {
-				// Always prefer hls.js when available - native HLS on webOS is unreliable
 				if (Hls.isSupported()) {
 					console.log('[Player] Using hls.js for HLS playback');
+
+					const hlsStartPosition = (playMethod === 'Transcode' && positionRef.current > 0)
+						? positionRef.current / 10000000
+						: -1; // -1 = default (start of playlist)
 
 					const hls = new Hls({
 						debug: false,
@@ -524,14 +639,16 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 						backBufferLength: 90,
 						maxBufferLength: 60,
 						maxMaxBufferLength: 120,
-						// Optimize for TV playback
+						startPosition: hlsStartPosition,
 						startFragPrefetch: true,
 						testBandwidth: true,
 						progressive: true,
-						// Error recovery
-						fragLoadingMaxRetry: 6,
-						manifestLoadingMaxRetry: 4,
-						levelLoadingMaxRetry: 4
+						fragLoadingMaxRetry: 10,
+						fragLoadingRetryDelay: 1000,
+						manifestLoadingMaxRetry: 6,
+						manifestLoadingRetryDelay: 1000,
+						levelLoadingMaxRetry: 6,
+						levelLoadingRetryDelay: 1000
 					});
 
 					hlsRef.current = hls;
@@ -558,31 +675,58 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 									console.log('[Player] HLS fatal network error, trying to recover');
 									hls.startLoad();
 									break;
-								case Hls.ErrorTypes.MEDIA_ERROR:
-									console.log('[Player] HLS fatal media error, trying to recover');
-									hls.recoverMediaError();
+								case Hls.ErrorTypes.MEDIA_ERROR: {
+									// Time-gated recovery limiting
+									const now = performance.now();
+									const recovery = hlsRecoveryRef.current;
+
+									if (recovery.attempts === 0 || (now - recovery.lastErrorTime > 3000)) {
+										hlsRecoveryRef.current = { attempts: 1, lastErrorTime: now };
+										console.log('[Player] HLS fatal media error, attempt 1 - recoverMediaError');
+										hls.recoverMediaError();
+									} else if (recovery.attempts === 1) {
+										hlsRecoveryRef.current = { attempts: 2, lastErrorTime: now };
+										console.log('[Player] HLS fatal media error, attempt 2 - swapAudioCodec + recoverMediaError');
+										hls.swapAudioCodec();
+										hls.recoverMediaError();
+									} else {
+										console.error('[Player] HLS media error unrecoverable after', recovery.attempts, 'attempts');
+										hlsRecoveryRef.current = { attempts: 0, lastErrorTime: 0 };
+
+										if (playMethod === 'Transcode') {
+											const seekTarget = lastSeekTargetRef.current != null
+												? lastSeekTargetRef.current
+												: positionRef.current;
+											console.log('[Player] Requesting new transcode stream at position', seekTarget, 'ticks');
+											seekInTranscode(seekTarget);
+										} else {
+											hls.destroy();
+											hlsRef.current = null;
+											setError('Playback failed - media error could not be recovered');
+										}
+									}
 									break;
+								}
 								default:
 									console.error('[Player] HLS unrecoverable error');
 									hls.destroy();
+									hlsRef.current = null;
 									break;
 							}
 						}
 					});
 
 					hls.attachMedia(video);
-					return; // HLS.js handles playback
+					return;
 				} else {
 					console.warn('[Player] HLS not supported, falling back to direct playback');
 				}
 			}
 
-			// Non-HLS or fallback: direct video source
 			console.log('[Player] Setting video source now');
 			video.src = mediaUrl;
 			video.load();
 
-			// Attempt to play
 			video.play().then(() => {
 				console.log('[Player] play() promise resolved');
 			}).catch(err => {
@@ -592,16 +736,14 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 		setSourceAndPlay();
 
-		// Cleanup on unmount or URL change
 		return () => {
 			if (hlsRef.current) {
 				hlsRef.current.destroy();
 				hlsRef.current = null;
 			}
 		};
-	}, [mediaUrl, isLoading, mimeType, playMethod]);
+	}, [mediaUrl, isLoading, mimeType, playMethod, seekInTranscode]);
 
-	// Controls auto-hide
 	const showControls = useCallback(() => {
 		setControlsVisible(true);
 		if (controlsTimeoutRef.current) {
@@ -626,7 +768,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		console.log('[Player] Playback unhealthy, falling back to transcode');
 	}, []);
 
-	// Cancel next episode countdown
 	const cancelNextEpisodeCountdown = useCallback(() => {
 		if (nextEpisodeTimerRef.current) {
 			clearInterval(nextEpisodeTimerRef.current);
@@ -637,7 +778,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		setShowSkipCredits(false);
 	}, []);
 
-	// Play next episode
 	const handlePlayNextEpisode = useCallback(async () => {
 		if (nextEpisode && onPlayNext) {
 			cancelNextEpisodeCountdown();
@@ -646,7 +786,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		}
 	}, [nextEpisode, onPlayNext, cancelNextEpisodeCountdown]);
 
-	// Start countdown to next episode
 	const startNextEpisodeCountdown = useCallback(() => {
 		if (nextEpisodeTimerRef.current) return;
 
@@ -665,23 +804,33 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		}, 1000);
 	}, [handlePlayNextEpisode]);
 
-	// Video event handlers
+	// Auto-focus next episode popup when it appears
+	useEffect(() => {
+		if ((showSkipCredits || showNextEpisode) && nextEpisode && !activeModal) {
+			setControlsVisible(false);
+			if (controlsTimeoutRef.current) {
+				clearTimeout(controlsTimeoutRef.current);
+			}
+			const timer = setTimeout(() => {
+				const defaultBtn = document.querySelector('[data-spot-default="true"]');
+				if (defaultBtn) {
+					Spotlight.focus(defaultBtn);
+				}
+			}, 100);
+			return () => clearTimeout(timer);
+		}
+	}, [showSkipCredits, showNextEpisode, nextEpisode, activeModal]);
+
 	const handleLoadedMetadata = useCallback(() => {
 		if (videoRef.current) {
-			setDuration(videoRef.current.duration);
-			// Seek to start position if resuming
-			// This handles both normal resume AND webOS 5 client-side seek workaround
-			if (positionRef.current > 0) {
-				const seekTimeSec = positionRef.current / 10000000;
-				console.log('[Player] Seeking to resume position:', seekTimeSec, 'seconds (', positionRef.current, 'ticks)');
-				videoRef.current.currentTime = seekTimeSec;
+			if (playMethod !== 'Transcode') {
+				setDuration(videoRef.current.duration);
 			}
-			// Explicitly call play() - autoPlay attribute alone is not reliable on webOS
 			videoRef.current.play().catch(err => {
 				console.error('[Player] Failed to start playback:', err);
 			});
 		}
-	}, []);
+	}, [playMethod]);
 
 	const handlePlay = useCallback(() => {
 		setIsPaused(false);
@@ -697,7 +846,26 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 	const handleTimeUpdate = useCallback(() => {
 		if (videoRef.current) {
-			const time = videoRef.current.currentTime;
+			const rawTime = videoRef.current.currentTime;
+
+			if (playMethod === 'Transcode' && !transcodeOffsetDetectedRef.current && transcodeOffsetTicksRef.current > 0) {
+				if (rawTime > 1) {
+					transcodeOffsetDetectedRef.current = true;
+					const expectedSec = transcodeOffsetTicksRef.current / 10000000;
+					if (rawTime > expectedSec * 0.5) {
+						transcodeOffsetTicksRef.current = 0;
+						console.log('[Player] Transcode timestamps: absolute (no offset needed)');
+					} else {
+						console.log('[Player] Transcode timestamps: relative, applying offset:', expectedSec, 's');
+					}
+				} else {
+					positionRef.current = transcodeOffsetTicksRef.current;
+					setCurrentTime(transcodeOffsetTicksRef.current / 10000000);
+					return;
+				}
+			}
+
+			const time = rawTime + transcodeOffsetTicksRef.current / 10000000;
 			setCurrentTime(time);
 			const ticks = Math.floor(time * 10000000);
 			positionRef.current = ticks;
@@ -706,7 +874,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				healthMonitorRef.current.recordProgress();
 			}
 
-			// Update custom subtitle text (webOS doesn't support native <track> elements)
 			if (subtitleTrackEvents && subtitleTrackEvents.length > 0) {
 				let foundSubtitle = null;
 				for (const event of subtitleTrackEvents) {
@@ -718,7 +885,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				setCurrentSubtitleText(foundSubtitle);
 			}
 
-			// Check for intro skip
 			if (mediaSegments && settings.skipIntro) {
 				const {introStart, introEnd, creditsStart} = mediaSegments;
 
@@ -743,7 +909,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				}
 			}
 
-			// Near end of video
 			if (nextEpisode && runTimeRef.current > 0) {
 				const remaining = runTimeRef.current - ticks;
 				const nearEnd = remaining < 300000000;
@@ -755,7 +920,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				}
 			}
 		}
-	}, [mediaSegments, settings.skipIntro, settings.skipCredits, settings.autoPlay, nextEpisode, showSkipCredits, showNextEpisode, startNextEpisodeCountdown, handlePlayNextEpisode, subtitleTrackEvents]);
+	}, [playMethod, mediaSegments, settings.skipIntro, settings.skipCredits, settings.autoPlay, nextEpisode, showSkipCredits, showNextEpisode, startNextEpisodeCountdown, handlePlayNextEpisode, subtitleTrackEvents]);
 
 	const handleWaiting = useCallback(() => {
 		setIsBuffering(true);
@@ -766,6 +931,10 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 	const handlePlaying = useCallback(() => {
 		setIsBuffering(false);
+		hlsRecoveryRef.current = { attempts: 0, lastErrorTime: 0 };
+		if (!seekDebounceTimerRef.current) {
+			lastSeekTargetRef.current = null;
+		}
 	}, []);
 
 	const handleEnded = useCallback(async () => {
@@ -850,19 +1019,18 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		setError(errorMessage);
 	}, [hasTriedTranscode, playMethod, item, selectedQuality, settings.maxBitrate]);
 
-	// Handle back button
 	const handleBack = useCallback(async () => {
 		cancelNextEpisodeCountdown();
-		await playback.reportStop(positionRef.current);
+		const currentPos = videoRef.current
+			? Math.floor(videoRef.current.currentTime * 10000000) + transcodeOffsetTicksRef.current
+			: positionRef.current;
+		await playback.reportStop(currentPos);
 
-		// Cleanup video element before exiting player
-		// Critical for webOS to release hardware decoder
 		cleanupVideoElement(videoRef.current);
 
 		onBack?.();
 	}, [onBack, cancelNextEpisodeCountdown]);
 
-	// Control actions
 	const handlePlayPause = useCallback(() => {
 		if (videoRef.current) {
 			if (isPaused) {
@@ -874,25 +1042,20 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 	}, [isPaused]);
 
 	const handleRewind = useCallback(() => {
-		if (videoRef.current) {
-			videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - settings.seekStep);
-		}
-	}, [settings.seekStep]);
+		if (videoRef.current) seekByOffset(-settings.seekStep);
+	}, [settings.seekStep, seekByOffset]);
 
 	const handleForward = useCallback(() => {
-		if (videoRef.current) {
-			videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + settings.seekStep);
-		}
-	}, [duration, settings.seekStep]);
+		if (videoRef.current) seekByOffset(settings.seekStep);
+	}, [settings.seekStep, seekByOffset]);
 
 	const handleSkipIntro = useCallback(() => {
 		if (mediaSegments?.introEnd && videoRef.current) {
-			videoRef.current.currentTime = mediaSegments.introEnd / 10000000;
+			seekToTicks(mediaSegments.introEnd);
 		}
 		setShowSkipIntro(false);
-	}, [mediaSegments]);
+	}, [mediaSegments, seekToTicks]);
 
-	// Modal handlers
 	const openModal = useCallback((modal) => {
 		setActiveModal(modal);
 		window.requestAnimationFrame(() => {
@@ -1002,23 +1165,20 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 	const handleSelectChapter = useCallback((e) => {
 		const ticks = parseInt(e.currentTarget.dataset.ticks, 10);
-		if (isNaN(ticks)) return;
-		if (videoRef.current && ticks >= 0) {
-			videoRef.current.currentTime = ticks / 10000000;
-		}
+		if (isNaN(ticks) || ticks < 0) return;
+		seekToTicks(ticks);
 		closeModal();
-	}, [closeModal]);
+	}, [closeModal, seekToTicks]);
 
-	// Progress bar seeking
 	const handleProgressClick = useCallback((e) => {
 		if (!videoRef.current) return;
 		const rect = e.currentTarget.getBoundingClientRect();
 		const percent = (e.clientX - rect.left) / rect.width;
 		const newTime = percent * duration;
-		videoRef.current.currentTime = newTime;
-	}, [duration]);
+		const newTicks = Math.floor(newTime * 10000000);
+		seekToTicks(newTicks);
+	}, [duration, seekToTicks]);
 
-	// Progress bar keyboard control
 	const handleProgressKeyDown = useCallback((e) => {
 		if (!videoRef.current) return;
 		const step = settings.seekStep;
@@ -1026,15 +1186,11 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		if (e.key === 'ArrowLeft' || e.keyCode === 37) {
 			e.preventDefault();
 			setIsSeeking(true);
-			const newTime = Math.max(0, videoRef.current.currentTime - step);
-			setSeekPosition(Math.floor(newTime * 10000000));
-			videoRef.current.currentTime = newTime;
+			seekByOffset(-step, true);
 		} else if (e.key === 'ArrowRight' || e.keyCode === 39) {
 			e.preventDefault();
 			setIsSeeking(true);
-			const newTime = Math.min(duration, videoRef.current.currentTime + step);
-			setSeekPosition(Math.floor(newTime * 10000000));
-			videoRef.current.currentTime = newTime;
+			seekByOffset(step, true);
 		} else if (e.key === 'ArrowUp' || e.keyCode === 38) {
 			e.preventDefault();
 			setFocusRow('top');
@@ -1044,13 +1200,12 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			setFocusRow('bottom');
 			setIsSeeking(false);
 		}
-	}, [duration, settings.seekStep]);
+	}, [settings.seekStep, seekByOffset]);
 
 	const handleProgressBlur = useCallback(() => {
 		setIsSeeking(false);
 	}, []);
 
-	// Button action handler
 	const handleButtonAction = useCallback((action) => {
 		showControls();
 		switch (action) {
@@ -1068,7 +1223,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		}
 	}, [showControls, handlePlayPause, handleRewind, handleForward, openModal, handlePlayNextEpisode]);
 
-	// Wrapper for control button clicks - reads action from data attribute
 	const handleControlButtonClick = useCallback((e) => {
 		const action = e.currentTarget.dataset.action;
 		if (action) {
@@ -1076,20 +1230,40 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		}
 	}, [handleButtonAction]);
 
-	// Prevent propagation handler for modals
 	const stopPropagation = useCallback((e) => {
 		e.stopPropagation();
 	}, []);
 
-	// Global key handler
 	useEffect(() => {
 		const handleKeyDown = (e) => {
 			const key = e.key || e.keyCode;
+			const nextEpisodeVisible = (showSkipCredits || showNextEpisode) && nextEpisode && !activeModal;
+
+			// When next episode popup is showing, block all keys except Back and Enter
+			if (nextEpisodeVisible) {
+				if (key === 'GoBack' || key === 'Backspace' || e.keyCode === 461 || e.keyCode === 8 || e.keyCode === 27) {
+					e.preventDefault();
+					e.stopPropagation();
+					cancelNextEpisodeCountdown();
+					return;
+				}
+				// Let Enter through for Spotlight button activation
+				if (key === 'Enter' || e.keyCode === 13) {
+					return;
+				}
+				// Allow Left/Right for navigating between buttons
+				if (key === 'ArrowLeft' || e.keyCode === 37 || key === 'ArrowRight' || e.keyCode === 39) {
+					return;
+				}
+				// Block everything else
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
 
 			// Media playback keys (webOS remote)
 			// Play: 415, Pause: 19, Fast-forward: 417, Rewind: 412, Stop: 413
 			if (e.keyCode === 415) {
-				// Play key
 				e.preventDefault();
 				e.stopPropagation();
 				if (videoRef.current && videoRef.current.paused) {
@@ -1098,7 +1272,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				return;
 			}
 			if (e.keyCode === 19) {
-				// Pause key
 				e.preventDefault();
 				e.stopPropagation();
 				if (videoRef.current && !videoRef.current.paused) {
@@ -1107,7 +1280,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				return;
 			}
 			if (e.keyCode === 417) {
-				// Fast-forward key
 				e.preventDefault();
 				e.stopPropagation();
 				handleForward();
@@ -1115,7 +1287,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				return;
 			}
 			if (e.keyCode === 412) {
-				// Rewind key
 				e.preventDefault();
 				e.stopPropagation();
 				handleRewind();
@@ -1123,7 +1294,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 				return;
 			}
 			if (e.keyCode === 413) {
-				// Stop key
 				e.preventDefault();
 				e.stopPropagation();
 				handleBack();
@@ -1156,17 +1326,12 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					// Apply the seek step immediately
 					const step = settings.seekStep;
 					if (key === 'ArrowLeft' || e.keyCode === 37) {
-						const newTime = Math.max(0, currentTime - step);
-						setSeekPosition(Math.floor(newTime * 10000000));
-						if (videoRef.current) videoRef.current.currentTime = newTime;
+						seekByOffset(-step, true);
 					} else {
-						const newTime = Math.min(duration, currentTime + step);
-						setSeekPosition(Math.floor(newTime * 10000000));
-						if (videoRef.current) videoRef.current.currentTime = newTime;
+						seekByOffset(step, true);
 					}
 					return;
 				}
-				// Any other key shows controls
 				e.preventDefault();
 				showControls();
 				return;
@@ -1203,17 +1368,14 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 		window.addEventListener('keydown', handleKeyDown, true);
 		return () => window.removeEventListener('keydown', handleKeyDown, true);
-	}, [controlsVisible, activeModal, closeModal, hideControls, handleBack, showControls, handlePlayPause, handleForward, handleRewind, currentTime, duration, settings.seekStep]);
+	}, [controlsVisible, activeModal, closeModal, hideControls, handleBack, showControls, handlePlayPause, handleForward, handleRewind, currentTime, settings.seekStep, seekByOffset, showNextEpisode, showSkipCredits, nextEpisode, cancelNextEpisodeCountdown]);
 
-	// Calculate progress - use seekPosition when actively seeking for smooth scrubbing
 	const displayTime = isSeeking ? (seekPosition / 10000000) : currentTime;
 	const progressPercent = duration > 0 ? (displayTime / duration) * 100 : 0;
 
-	// Focus appropriate element when focusRow changes
 	useEffect(() => {
 		if (!controlsVisible) return;
 
-		// Small delay to ensure elements are rendered
 		const timer = setTimeout(() => {
 			if (focusRow === 'progress') {
 				Spotlight.focus('progress-bar');
@@ -1225,7 +1387,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		return () => clearTimeout(timer);
 	}, [focusRow, controlsVisible]);
 
-	// Render loading
 	if (isLoading) {
 		return (
 			<div className={css.container}>
@@ -1237,7 +1398,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		);
 	}
 
-	// Render error
 	if (error) {
 		return (
 			<div className={css.container}>
@@ -1320,24 +1480,53 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 
 			{/* Next Episode Overlay */}
 			{(showSkipCredits || showNextEpisode) && nextEpisode && !activeModal && (
-				<div className={css.nextEpisodeOverlay}>
-					<div className={css.nextLabel}>Up Next</div>
-					<div className={css.nextTitle}>{nextEpisode.Name}</div>
-					{nextEpisode.SeriesName && (
-						<div className={css.nextMeta}>
-							S{nextEpisode.ParentIndexNumber}E{nextEpisode.IndexNumber}
+				<NextEpisodeContainer className={css.nextEpisodeOverlay} spotlightRestrict="self-only">
+					<div className={css.nextEpisodeCard}>
+						<div className={css.nextThumbnail}>
+							<img
+								src={getImageUrl(getServerUrl(), nextEpisode.Id, 'Primary', {maxWidth: 400, quality: 80})}
+								alt={nextEpisode.Name}
+								className={css.nextThumbnailImg}
+								onError={(e) => {
+									e.target.style.display = 'none';
+								}}
+							/>
+							<div className={css.nextThumbnailGradient} />
 						</div>
-					)}
-					{nextEpisodeCountdown !== null && (
-						<div className={css.nextCountdown}>
-							Starting in {nextEpisodeCountdown}s
+						<div className={css.nextInfo}>
+							<div className={css.nextLabel}>UP NEXT</div>
+							<div className={css.nextTitle}>{nextEpisode.Name}</div>
+							{nextEpisode.SeriesName && (
+								<div className={css.nextMeta}>
+									S{nextEpisode.ParentIndexNumber} E{nextEpisode.IndexNumber} &middot; {nextEpisode.SeriesName}
+								</div>
+							)}
+							<div className={css.nextActions}>
+								<SpottableButton
+									className={css.nextPlayBtn}
+									onClick={handlePlayNextEpisode}
+									data-spot-default="true"
+								>
+									&#9654; Play Now
+								</SpottableButton>
+								<SpottableButton
+									className={css.nextCancelBtn}
+									onClick={cancelNextEpisodeCountdown}
+								>
+									Cancel
+								</SpottableButton>
+							</div>
 						</div>
-					)}
-					<div className={css.nextButtons}>
-						<Button onClick={handlePlayNextEpisode}>Play Now</Button>
-						<Button onClick={cancelNextEpisodeCountdown}>Cancel</Button>
 					</div>
-				</div>
+					{nextEpisodeCountdown !== null && (
+						<div className={css.nextProgressBar}>
+							<div
+								className={css.nextProgressFill}
+								style={{width: `${((15 - nextEpisodeCountdown) / 15) * 100}%`}}
+							/>
+						</div>
+					)}
+				</NextEpisodeContainer>
 			)}
 
 			{/* Player Controls Overlay */}
@@ -1565,7 +1754,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					? mediaSource?.MediaStreams?.find(s => s.Index === selectedSubtitleIndex)
 					: null;
 
-				// Format bitrate nicely
 				const formatBitrate = (bitrate) => {
 					if (!bitrate) return 'Unknown';
 					if (bitrate >= 1000000) return `${(bitrate / 1000000).toFixed(1)} Mbps`;
@@ -1573,7 +1761,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					return `${bitrate} bps`;
 				};
 
-				// Get HDR type
 				const getHdrType = () => {
 					if (!videoStream) return 'SDR';
 					const rangeType = videoStream.VideoRangeType || '';
@@ -1585,7 +1772,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					return 'SDR';
 				};
 
-				// Get video codec with profile
 				const getVideoCodec = () => {
 					if (!videoStream) return 'Unknown';
 					let codec = (videoStream.Codec || '').toUpperCase();
@@ -1603,7 +1789,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 					return codec;
 				};
 
-				// Get audio codec with channels
 				const getAudioCodec = () => {
 					if (!audioStream) return 'Unknown';
 					let codec = (audioStream.Codec || '').toUpperCase();

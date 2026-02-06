@@ -96,28 +96,6 @@
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
-.bitrateIndicator {
-	background: rgba(0, 0, 0, 0.85);
-	color: var(--accent-color, #00a4dc);
-	padding: 8px 16px;
-	border-radius: 6px;
-	font-size: 18px;
-	font-weight: 600;
-	border: 2px solid rgba(255, 255, 255, 0.2);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-.playMethodIndicator {
-	background: rgba(0, 0, 0, 0.85);
-	color: #4caf50;
-	padding: 8px 16px;
-	border-radius: 6px;
-	font-size: 16px;
-	font-weight: 600;
-	border: 2px solid rgba(255, 255, 255, 0.2);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
 /* Skip Overlay */
 .skipOverlay {
 	position: fixed;
@@ -674,47 +652,134 @@
 /* Next Episode Overlay */
 .nextEpisodeOverlay {
 	position: fixed;
-	bottom: 300px;
+	bottom: 200px;
 	right: 60px;
-	background: rgba(0, 0, 0, 0.9);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	border-radius: 12px;
-	padding: 24px 32px;
 	z-index: 200;
-	min-width: 320px;
-	animation: slideIn 0.3s ease-out;
+	width: 400px;
+	animation: nextSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes nextSlideIn {
+	from {
+		opacity: 0;
+		transform: translateX(60px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.nextEpisodeCard {
+	background: rgba(20, 20, 20, 0.95);
+	border-radius: 8px;
+	overflow: hidden;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.nextThumbnail {
+	position: relative;
+	width: 100%;
+	height: 200px;
+	overflow: hidden;
+	background: #1a1a1a;
+}
+
+.nextThumbnailImg {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.nextThumbnailGradient {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 80px;
+	background: linear-gradient(transparent, rgba(20, 20, 20, 0.95));
+}
+
+.nextInfo {
+	padding: 16px 20px 20px;
 }
 
 .nextLabel {
-	font-size: 18px;
-	color: #888;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.5);
 	text-transform: uppercase;
-	letter-spacing: 1px;
-	margin-bottom: 8px;
+	letter-spacing: 2px;
+	font-weight: 700;
+	margin-bottom: 6px;
 }
 
 .nextTitle {
-	font-size: 28px;
+	font-size: 22px;
 	color: #fff;
-	font-weight: 500;
+	font-weight: 600;
 	margin-bottom: 4px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .nextMeta {
-	font-size: 20px;
-	color: #666;
+	font-size: 15px;
+	color: rgba(255, 255, 255, 0.4);
 	margin-bottom: 16px;
 }
 
-.nextCountdown {
-	font-size: 20px;
-	color: var(--accent-color, #00a4dc);
-	margin-bottom: 16px;
-}
-
-.nextButtons {
+.nextActions {
 	display: flex;
-	gap: 12px;
+	gap: 10px;
+}
+
+.nextPlayBtn,
+.nextCancelBtn {
+	padding: 10px 24px;
+	border-radius: 4px;
+	font-size: 16px;
+	font-weight: 600;
+	border: none;
+	cursor: pointer;
+	outline: none;
+	transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.nextPlayBtn {
+	background: #fff;
+	color: #000;
+	flex: 1;
+}
+
+.nextPlayBtn:focus {
+	transform: scale(1.05);
+	background: var(--accent-color, #00a4dc);
+	color: #fff;
+}
+
+.nextCancelBtn {
+	background: rgba(255, 255, 255, 0.15);
+	color: #fff;
+}
+
+.nextCancelBtn:focus {
+	transform: scale(1.05);
+	background: rgba(255, 255, 255, 0.3);
+}
+
+.nextProgressBar {
+	height: 4px;
+	background: rgba(255, 255, 255, 0.15);
+	border-radius: 0 0 8px 8px;
+	overflow: hidden;
+}
+
+.nextProgressFill {
+	height: 100%;
+	background: var(--accent-color, #00a4dc);
+	transition: width 1s linear;
+	border-radius: 0 0 0 8px;
 }
 
 /* Loading Indicator */

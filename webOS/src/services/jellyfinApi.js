@@ -414,6 +414,21 @@ export const createApiForServer = (serverUrl, token, userId) => {
 		getPlaybackInfo: (itemId) =>
 			serverRequest(`/Items/${itemId}/PlaybackInfo?UserId=${userId}`),
 
+		reportPlaybackStart: (data) => serverRequest('/Sessions/Playing', {
+			method: 'POST',
+			body: data
+		}),
+
+		reportPlaybackProgress: (data) => serverRequest('/Sessions/Playing/Progress', {
+			method: 'POST',
+			body: data
+		}),
+
+		reportPlaybackStopped: (data) => serverRequest('/Sessions/Playing/Stopped', {
+			method: 'POST',
+			body: data
+		}),
+
 		setFavorite: (itemId, isFavorite) => serverRequest(`/Users/${userId}/FavoriteItems/${itemId}`, {
 			method: isFavorite ? 'POST' : 'DELETE'
 		}),
