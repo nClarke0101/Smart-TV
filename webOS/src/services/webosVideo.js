@@ -359,7 +359,29 @@ export const getPlayMethod = (mediaSource, capabilities) => {
 	let hdrOk = true;
 	if (videoStream?.VideoRangeType) {
 		const rangeType = videoStream.VideoRangeType.toUpperCase();
-		if (rangeType.includes('DOLBY') || rangeType.includes('DV') || rangeType === 'DOVI') {
+		if (rangeType === 'DOVI') {
+			// Pure DV with no fallback layer needs native DV support
+			hdrOk = capabilities.dolbyVision;
+			if (!hdrOk) console.log('[webosVideo] Pure Dolby Vision not supported (no fallback layer)');
+		} else if (rangeType.includes('DOVIWITH')) {
+			// DV with fallback layer — check if we can play the fallback
+			if (capabilities.dolbyVision) {
+				hdrOk = true; // Native DV support
+			} else if (rangeType.includes('HDR10') && capabilities.hdr10) {
+				hdrOk = true; // HDR10 fallback layer
+				console.log('[webosVideo] DV with HDR10 fallback — will use HDR10 layer');
+			} else if (rangeType.includes('HLG') && capabilities.hlg) {
+				hdrOk = true; // HLG fallback layer
+				console.log('[webosVideo] DV with HLG fallback — will use HLG layer');
+			} else if (rangeType.includes('SDR')) {
+				hdrOk = true; // SDR fallback always works
+				console.log('[webosVideo] DV with SDR fallback — will use SDR layer');
+			} else {
+				hdrOk = false;
+				console.log('[webosVideo] DV fallback layer not supported:', rangeType);
+			}
+		} else if (rangeType.includes('DOLBY') || rangeType.includes('DV')) {
+			// Generic DV/DOLBY reference, needs native DV
 			hdrOk = capabilities.dolbyVision;
 			if (!hdrOk) console.log('[webosVideo] Dolby Vision not supported');
 		} else if (rangeType.includes('HDR10+') || rangeType === 'HDR10PLUS') {
