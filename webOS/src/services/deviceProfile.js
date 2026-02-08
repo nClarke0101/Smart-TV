@@ -18,12 +18,21 @@ const getWebOSVersionFromChrome = (chromeVersion) => {
 	return 4; // Default
 };
 
+// Starting with webOS 7 (2022), LG uses year-based marketing names (22, 23, 24, 25...)
+// but the enact SDK and internal APIs still return sequential versions (7, 8, 9, 10...).
+// All capability checks in this codebase use the marketing version numbers, so we
+// convert internal versions 7+ to marketing: marketing = internal + 15.
+const internalToMarketingVersion = (internal) => {
+	if (internal >= 7) return internal + 15;
+	return internal;
+};
+
 export const detectWebOSVersion = (sdkVersion = null) => {
 	if (sdkVersion) {
 		const match = /^(\d+)\./.exec(sdkVersion);
 		if (match) {
 			const major = parseInt(match[1], 10);
-			if (major >= 1 && major <= 25) return major;
+			if (major >= 1) return internalToMarketingVersion(major);
 		}
 	}
 
