@@ -25,6 +25,7 @@ const defaultSettings = {
 	subtitleShadowOpacity: 50, // 0-100
 	subtitleShadowBlur: 0.1, // em/px size of shadow
 	subtitlePositionAbsolute: 90, // 0-100 (from top)
+	seekStep: 10,
 	skipIntro: true,
 	skipCredits: false,
 	autoPlay: true,
