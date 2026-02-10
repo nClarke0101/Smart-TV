@@ -16,7 +16,7 @@ const RowContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restr
 
 const ITEMS_PER_PAGE = 12;
 
-const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
+const Favorites = ({onSelectItem, onSelectPerson}) => {
 	const {api, serverUrl, hasMultipleServers} = useAuth();
 	const {settings} = useSettings();
 	const unifiedMode = settings.unifiedLibraryMode && hasMultipleServers;
@@ -159,11 +159,8 @@ const Favorites = ({onSelectItem, onSelectPerson, onBack}) => {
 			if (rowIndex < visibleRows.length - 1) {
 				Spotlight.focus(`favorites-row-${rowIndex + 1}`);
 			}
-		} else if (e.keyCode === 461 || e.keyCode === 8) {
-			e.preventDefault();
-			onBack?.();
 		}
-	}, [visibleRows.length, onBack]);
+	}, [visibleRows.length]);
 
 	const renderCard = useCallback((item, index, rowId) => {
 		const isPerson = item.Type === 'Person';

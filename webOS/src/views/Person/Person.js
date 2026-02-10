@@ -11,21 +11,11 @@ import css from './Person.module.less';
 
 const GridContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-only'}, 'div');
 
-const Person = ({personId, onSelectItem, onBack}) => {
+const Person = ({personId, onSelectItem}) => {
 	const {api, serverUrl} = useAuth();
 	const [person, setPerson] = useState(null);
 	const [items, setItems] = useState([]);
 	const [isLoading, setIsLoading] = useState(true);
-
-	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				onBack?.();
-			}
-		};
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
-	}, [onBack]);
 
 	useEffect(() => {
 		const loadPerson = async () => {

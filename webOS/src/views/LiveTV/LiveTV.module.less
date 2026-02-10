@@ -50,7 +50,10 @@
 .guideControls {
 	display: flex;
 	align-items: center;
-	gap: 16px;
+
+	> * + * {
+		margin-left: 16px;
+	}
 }
 
 .guideBtn {
@@ -337,8 +340,11 @@
 	flex: 1;
 	padding: 24px 32px;
 	display: flex;
-	gap: 24px;
 	overflow: auto;
+
+	> * + * {
+		margin-left: 24px;
+	}
 }
 
 .popupImageContainer {
@@ -364,12 +370,18 @@
 .popupMetadata {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
+
+	> * + * {
+		margin-top: 12px;
+	}
 }
 
 .metadataItem {
 	display: flex;
-	gap: 12px;
+
+	> * + * {
+		margin-left: 12px;
+	}
 }
 
 .metadataLabel {
@@ -385,10 +397,13 @@
 
 .popupActions {
 	display: flex;
-	gap: 16px;
 	padding: 24px 32px;
 	background: @background-tertiary;
 	border-top: 1px solid @border-color;
+
+	> * + * {
+		margin-left: 16px;
+	}
 }
 
 .popupBtn {

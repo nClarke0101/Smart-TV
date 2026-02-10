@@ -39,7 +39,10 @@
 
 .tabs {
 	display: flex;
-	gap: 16px;
+
+	> * + * {
+		margin-left: 16px;
+	}
 }
 
 .tab {
@@ -73,7 +76,11 @@
 .grid {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 24px;
+
+	> * {
+		margin-right: 24px;
+		margin-bottom: 24px;
+	}
 }
 
 .card {
@@ -208,15 +215,21 @@
 .popupMeta {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
 	font-size: 16px;
+
+	> * + * {
+		margin-top: 8px;
+	}
 	color: @text-muted;
 }
 
 .popupActions {
 	display: flex;
-	gap: 16px;
 	padding: 24px 32px;
+
+	> * + * {
+		margin-left: 16px;
+	}
 	background: @background-tertiary;
 	border-top: 1px solid @border-color;
 }

@@ -104,6 +104,9 @@
 .buttons {
 	display: flex;
 	justify-content: center;
-	gap: 20px;
 	flex-shrink: 0;
+
+	> * + * {
+		margin-left: 20px;
+	}
 }

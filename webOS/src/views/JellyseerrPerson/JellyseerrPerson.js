@@ -16,17 +16,6 @@ const JellyseerrPerson = ({personId, personName, onClose, onSelectItem, onBack})
 	const appearancesRef = useRef([]);
 
 	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				onClose?.();
-				onBack?.();
-			}
-		};
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
-	}, [onClose, onBack]);
-
-	useEffect(() => {
 		if (!personId) return;
 
 		const loadDetails = async () => {

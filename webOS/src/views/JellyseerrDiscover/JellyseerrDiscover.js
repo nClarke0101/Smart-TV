@@ -344,7 +344,7 @@ const DiscoverRow = memo(function DiscoverRow({
 	);
 });
 
-const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSelectStudio, onBack}) => {
+const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSelectStudio}) => {
 	const {isAuthenticated, isEnabled, user: contextUser} = useJellyseerr();
 	const {settings} = useSettings();
 	const [rows, setRows] = useState({});
@@ -357,19 +357,12 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 	const backdropTimeoutRef = useRef(null);
 
 	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				onBack?.();
-			}
-		};
-		document.addEventListener('keydown', handleKeyDown);
 		return () => {
-			document.removeEventListener('keydown', handleKeyDown);
 			if (backdropTimeoutRef.current) {
 				clearTimeout(backdropTimeoutRef.current);
 			}
 		};
-	}, [onBack]);
+	}, []);
 
 	useEffect(() => {
 		const loadInitialData = async () => {

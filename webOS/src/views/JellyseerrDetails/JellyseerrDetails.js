@@ -637,7 +637,7 @@ const CancelRequestPopup = memo(({open, pendingRequests, title, onConfirm, onClo
 	);
 });
 
-const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectPerson, onSelectKeyword, onBack}) => {
+const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectPerson, onSelectKeyword, onBack, backHandlerRef}) => {
 	const {isAuthenticated, user: contextUser} = useJellyseerr();
 	const [details, setDetails] = useState(null);
 	const [loading, setLoading] = useState(true);
@@ -663,25 +663,16 @@ const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectP
 	const handleCloseCancelPopup = useCallback(() => setShowCancelPopup(false), []);
 
 	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				if (showAdvancedPopup) {
-					setShowAdvancedPopup(false);
-				} else if (showSeasonPopup) {
-					setShowSeasonPopup(false);
-				} else if (showQualityPopup) {
-					setShowQualityPopup(false);
-				} else if (showCancelPopup) {
-					setShowCancelPopup(false);
-				} else {
-					onClose?.();
-					onBack?.();
-				}
-			}
+		if (!backHandlerRef) return;
+		backHandlerRef.current = () => {
+			if (showAdvancedPopup) { setShowAdvancedPopup(false); return true; }
+			if (showSeasonPopup) { setShowSeasonPopup(false); return true; }
+			if (showQualityPopup) { setShowQualityPopup(false); return true; }
+			if (showCancelPopup) { setShowCancelPopup(false); return true; }
+			return false;
 		};
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
-	}, [onClose, onBack, showQualityPopup, showSeasonPopup, showAdvancedPopup, showCancelPopup]);
+		return () => { if (backHandlerRef) backHandlerRef.current = null; };
+	}, [backHandlerRef, showQualityPopup, showSeasonPopup, showAdvancedPopup, showCancelPopup]);
 
 	useEffect(() => {
 		if (!mediaId || !mediaType) return;

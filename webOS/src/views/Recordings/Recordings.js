@@ -80,7 +80,7 @@ const TimerCard = ({timer, serverUrl, formatScheduledTime, onSelect}) => {
 	);
 };
 
-const Recordings = ({onPlayRecording, onBack}) => {
+const Recordings = ({onPlayRecording, backHandlerRef}) => {
 	const {api, serverUrl} = useAuth();
 	const [recordings, setRecordings] = useState([]);
 	const [timers, setTimers] = useState([]);
@@ -89,26 +89,16 @@ const Recordings = ({onPlayRecording, onBack}) => {
 	const [selectedItem, setSelectedItem] = useState(null);
 
 	useEffect(() => {
-		const handleKeyDown = (e) => {
+		if (!backHandlerRef) return;
+		backHandlerRef.current = () => {
 			if (selectedItem) {
-				if (e.keyCode === 461 || e.keyCode === 27 || e.keyCode === 8) {
-					e.preventDefault();
-					e.stopPropagation();
-					setSelectedItem(null);
-					return;
-				}
-				return;
+				setSelectedItem(null);
+				return true;
 			}
-
-			if (e.keyCode === 461 || e.keyCode === 27 || e.keyCode === 8) {
-				e.preventDefault();
-				onBack?.();
-			}
+			return false;
 		};
-
-		window.addEventListener('keydown', handleKeyDown, true);
-		return () => window.removeEventListener('keydown', handleKeyDown, true);
-	}, [onBack, selectedItem]);
+		return () => { if (backHandlerRef) backHandlerRef.current = null; };
+	}, [backHandlerRef, selectedItem]);
 
 	useEffect(() => {
 		const loadData = async () => {

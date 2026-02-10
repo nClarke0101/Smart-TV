@@ -79,8 +79,11 @@
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
-	gap: 10px;
 	z-index: 150;
+
+	> * + * {
+		margin-top: 10px;
+	}
 	pointer-events: none;
 }
 
@@ -202,16 +205,22 @@
 /* Control Buttons */
 .controlButtons {
 	display: flex;
-	gap: 20px;
 	justify-content: flex-start;
+
+	> * + * {
+		margin-left: 20px;
+	}
 	align-items: center;
 	margin-bottom: 30px;
 }
 
 .controlButtonsBottom {
 	display: flex;
-	gap: 20px;
 	justify-content: flex-start;
+
+	> * + * {
+		margin-left: 20px;
+	}
 	align-items: center;
 	margin-top: 20px;
 }
@@ -460,7 +469,10 @@
 .trackList {
 	display: flex;
 	flex-direction: column;
-	gap: 15px;
+
+	> * + * {
+		margin-top: 15px;
+	}
 }
 
 .trackItem {
@@ -565,8 +577,11 @@
 .videoInfoContent {
 	display: flex;
 	flex-direction: column;
-	gap: 25px;
 	max-height: 55vh;
+
+	> * + * {
+		margin-top: 25px;
+	}
 	padding-right: 10px;
 	outline: none;
 }
@@ -730,7 +745,10 @@
 
 .nextActions {
 	display: flex;
-	gap: 10px;
+
+	> * + * {
+		margin-left: 10px;
+	}
 }
 
 .nextPlayBtn,

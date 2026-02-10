@@ -31,7 +31,7 @@ const MAX_PAGES = 25;
  * @param {Function} props.onSelectItem - Callback when an item is selected
  * @param {Function} props.onBack - Callback to go back
  */
-const JellyseerrBrowse = ({browseType, item, mediaType: initialMediaType, onSelectItem, onBack}) => {
+const JellyseerrBrowse = ({browseType, item, mediaType: initialMediaType, onSelectItem, backHandlerRef}) => {
 	const {isEnabled} = useJellyseerr();
 	const {settings} = useSettings();
 	const [items, setItems] = useState([]);
@@ -177,23 +177,24 @@ const JellyseerrBrowse = ({browseType, item, mediaType: initialMediaType, onSele
 	}, []);
 
 	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				if (showFilterModal) {
-					setShowFilterModal(false);
-				} else {
-					onBack?.();
-				}
+		if (!backHandlerRef) return;
+		backHandlerRef.current = () => {
+			if (showFilterModal) {
+				setShowFilterModal(false);
+				return true;
 			}
+			return false;
 		};
-		document.addEventListener('keydown', handleKeyDown);
+		return () => { if (backHandlerRef) backHandlerRef.current = null; };
+	}, [backHandlerRef, showFilterModal]);
+
+	useEffect(() => {
 		return () => {
-			document.removeEventListener('keydown', handleKeyDown);
 			if (backdropTimeoutRef.current) {
 				clearTimeout(backdropTimeoutRef.current);
 			}
 		};
-	}, [showFilterModal, onBack]);
+	}, []);
 
 	const handleFilterSelect = useCallback((ev) => {
 		const key = ev.currentTarget?.dataset?.filterKey;

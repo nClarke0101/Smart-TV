@@ -102,16 +102,6 @@ const JellyseerrRequests = ({onSelectItem, onClose, ...rest}) => {
 	const [error, setError] = useState(null);
 	const [filter, setFilter] = useState('all');
 
-	useEffect(() => {
-		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27) {
-				onClose?.();
-			}
-		};
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
-	}, [onClose]);
-
 	const loadRequests = useCallback(async () => {
 		if (!isAuthenticated) return;
 
