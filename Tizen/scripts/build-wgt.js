@@ -270,11 +270,13 @@ async function main() {
 	const wgtName = `Moonfin-v${version}.wgt`;
 	
 	let packageCmd;
-	if (isSigned) {
-		// Use the active signing profile
-		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}" -o "${ROOT}"`;
+	const signProfile = process.env.TIZEN_SIGN_PROFILE;
+	if (isSigned || signProfile) {
+		// Use an explicit signing profile (from --signed flag or TIZEN_SIGN_PROFILE env var)
+		const profile = signProfile || 'default';
+		packageCmd = `"${tizenCLI}" package -t wgt --sign "${profile}" -- "${DIST}" -o "${ROOT}"`;
 	} else {
-		// Package without signing (for development/sideloading)
+		// Package without explicit profile (uses active profile)
 		packageCmd = `"${tizenCLI}" package -t wgt -- "${DIST}" -o "${ROOT}"`;
 	}
 	

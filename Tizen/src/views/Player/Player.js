@@ -7,7 +7,7 @@ import Scroller from '@enact/sandstone/Scroller';
 import * as playback from '../../services/playback';
 import {
 	initTizenAPI, registerAppStateObserver, keepScreenOn,
-	avplayOpen, avplayPrepare, avplayPlay, avplayPause, avplayStop, avplayClose,
+	avplayOpen, avplayPrepare, avplayPlay, avplayPause,
 	avplaySeek, avplayGetCurrentTime, avplayGetDuration, avplayGetState,
 	avplaySetListener, avplaySetSpeed, avplaySelectTrack, avplaySetSilentSubtitle,
 	avplayGetTracks, avplaySetDisplayMethod, setDisplayWindow, cleanupAVPlay
@@ -453,13 +453,15 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		};
 		init();
 
+		const containerNode = playerContainerRef.current;
+
 		return () => {
 			keepScreenOn(false);
 			// Restore backgrounds on all ancestors
 			document.body.style.background = '';
 			document.documentElement.style.background = '';
-			if (playerContainerRef.current) {
-				let el = playerContainerRef.current.parentElement;
+			if (containerNode) {
+				let el = containerNode.parentElement;
 				while (el && el !== document.documentElement) {
 					el.style.background = '';
 					el.style.backgroundColor = '';
@@ -475,6 +477,11 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			}
 		};
 	}, [isPaused]);
+
+	// Handle playback health issues
+	const handleUnhealthy = useCallback(async () => {
+		console.log('[Player] Playback unhealthy, falling back to transcode');
+	}, []);
 
 	// ==============================
 	// Load Media & Start AVPlay
@@ -745,11 +752,6 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
 		}
-	}, []);
-
-	// Handle playback health issues
-	const handleUnhealthy = useCallback(async () => {
-		console.log('[Player] Playback unhealthy, falling back to transcode');
 	}, []);
 
 	// Cancel next episode countdown
@@ -1173,7 +1175,7 @@ const Player = ({item, initialAudioIndex, initialSubtitleIndex, onEnded, onBack,
 			setFocusRow('bottom');
 			setIsSeeking(false);
 		}
-	}, [duration, settings.seekStep, showControls, scheduleDeferredSeek, executeDeferredSeek]);
+	}, [settings.seekStep, showControls, scheduleDeferredSeek, executeDeferredSeek]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const handleProgressBlur = useCallback(() => {
 		executeDeferredSeek();

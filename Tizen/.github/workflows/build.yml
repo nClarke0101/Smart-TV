@@ -42,14 +42,22 @@ jobs:
 
       - name: Create dummy signing certificate
         run: |
-          tizen certificate -a MoonfinCI -p 1234 -c US -s CI -ct developer 2>/dev/null || true
-          tizen security-profiles add -n MoonfinCI -a "$HOME/tizen-studio-data/keystore/author/author.p12" -p 1234 2>/dev/null || true
+          # Remove stale profile data so re-creation always works
+          rm -f "$HOME/tizen-studio-data/profile/profiles.xml"
+          rm -rf "$HOME/tizen-studio-data/keystore/author"
+          mkdir -p "$HOME/tizen-studio-data/profile"
+          mkdir -p "$HOME/tizen-studio-data/keystore/author"
+          tizen certificate -a MoonfinCI -p 1234 -c US -s CI -ct developer
+          tizen security-profiles add -n MoonfinCI -a "$HOME/tizen-studio-data/keystore/author/author.p12" -p 1234
+          tizen cli-config default.profiles.path="$HOME/tizen-studio-data/profile/profiles.xml"
 
       - name: Install dependencies
         run: npm install --force
 
       - name: Build .wgt
         run: npm run build
+        env:
+          TIZEN_SIGN_PROFILE: MoonfinCI
 
       - name: Get version
         id: version
