@@ -49,7 +49,7 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
 	var rafId;
 	function schedulePatch () {
 		if (rafId) return;
-		rafId = requestAnimationFrame(function () {
+		rafId = window.requestAnimationFrame(function () {
 			rafId = null;
 			patchSliderKnobs();
 			schedulePatch();
