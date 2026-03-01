@@ -560,9 +560,12 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 					}
 				}
 
-				// Report start and begin progress reporting
 				playback.reportStart(positionRef.current);
-				playback.startProgressReporting(() => positionRef.current);
+				playback.startProgressReporting(
+					() => positionRef.current,
+					10000,
+					() => ({ isPaused: avplayGetState() !== 'PLAYING' })
+				);
 				playback.startHealthMonitoring(handleUnhealthy);
 				healthMonitorRef.current = playback.getHealthMonitor();
 
@@ -723,11 +726,14 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				if (result.url) {
 					setPlayMethod(result.playMethod);
 					playSessionRef.current = result.playSessionId;
-					// Restart AVPlay with transcode URL
 					try {
 						await startAVPlayback(result.url, positionRef.current);
 						playback.reportStart(positionRef.current);
-						playback.startProgressReporting(() => positionRef.current);
+						playback.startProgressReporting(
+							() => positionRef.current,
+							10000,
+							() => ({ isPaused: avplayGetState() !== 'PLAYING' })
+						);
 					} catch (restartErr) {
 						console.error('[Player] AVPlay restart failed:', restartErr);
 						setError('Playback failed. The file format may not be supported.');
@@ -763,9 +769,11 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		if (state === 'PLAYING') {
 			avplayPause();
 			setIsPaused(true);
+			playback.reportProgress(positionRef.current, { isPaused: true, eventName: 'pause' });
 		} else if (state === 'PAUSED' || state === 'READY') {
 			avplayPlay();
 			setIsPaused(false);
+			playback.reportProgress(positionRef.current, { isPaused: false, eventName: 'unpause' });
 		}
 	}, []);
 
@@ -851,7 +859,11 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				if (result.playMethod) setPlayMethod(result.playMethod);
 				await startAVPlayback(result.url, currentPositionTicks);
 				playback.reportStart(positionRef.current);
-				playback.startProgressReporting(() => positionRef.current);
+				playback.startProgressReporting(
+					() => positionRef.current,
+					10000,
+					() => ({ isPaused: avplayGetState() !== 'PLAYING' })
+				);
 			}
 		} catch (err) {
 			console.error('[Player] Failed to change audio:', err);

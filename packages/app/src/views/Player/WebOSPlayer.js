@@ -92,6 +92,7 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 	const transcodeOffsetDetectedRef = useRef(true);
 	const playbackStartTimeoutRef = useRef(null);
 	const pendingResumeTicksRef = useRef(0);
+	const hasReportedStartRef = useRef(false);
 
 	const destroyHlsPlayer = () => {
 		if (hlsPlayerRef.current) {
@@ -232,6 +233,7 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 		const loadMedia = async () => {
 			isCleaningUpRef.current = false;
+			hasReportedStartRef.current = false;
 			if (prevItemIdRef.current !== item.Id) {
 				transcodeRetryCountRef.current = 0;
 				forceHlsJsRef.current = false;
@@ -897,14 +899,24 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 	const handlePlay = useCallback(() => {
 		setIsPaused(false);
-		playback.reportStart(positionRef.current);
-		playback.startProgressReporting(() => positionRef.current);
-		playback.startHealthMonitoring(handleUnhealthy);
-		healthMonitorRef.current = playback.getHealthMonitor();
+		if (!hasReportedStartRef.current) {
+			hasReportedStartRef.current = true;
+			playback.reportStart(positionRef.current);
+			playback.startProgressReporting(
+				() => positionRef.current,
+				10000,
+				() => ({ isPaused: videoRef.current?.paused || false })
+			);
+			playback.startHealthMonitoring(handleUnhealthy);
+			healthMonitorRef.current = playback.getHealthMonitor();
+		} else {
+			playback.reportProgress(positionRef.current, { isPaused: false, eventName: 'unpause' });
+		}
 	}, [handleUnhealthy]);
 
 	const handlePause = useCallback(() => {
 		setIsPaused(true);
+		playback.reportProgress(positionRef.current, { isPaused: true, eventName: 'pause' });
 	}, []);
 
 	const handleTimeUpdate = useCallback(() => {

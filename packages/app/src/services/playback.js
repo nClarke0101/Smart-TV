@@ -764,7 +764,7 @@ export const reportProgress = async (positionTicks, options = {}) => {
 			)
 			: jellyfinApi.api;
 
-		await api.reportPlaybackProgress({
+		const info = {
 			ItemId: currentSession.itemId,
 			PlaySessionId: currentSession.playSessionId,
 			MediaSourceId: currentSession.mediaSourceId,
@@ -775,7 +775,13 @@ export const reportProgress = async (positionTicks, options = {}) => {
 			PlayMethod: currentSession.playMethod,
 			AudioStreamIndex: currentSession.audioStreamIndex,
 			SubtitleStreamIndex: currentSession.subtitleStreamIndex
-		});
+		};
+
+		if (options.eventName) {
+			info.EventName = options.eventName;
+		}
+
+		await api.reportPlaybackProgress(info);
 	} catch (e) { void e; }
 };
 
@@ -822,13 +828,14 @@ export const reportStop = async (positionTicks) => {
 	currentSession = null;
 };
 
-export const startProgressReporting = (getPositionTicks, intervalMs = 10000) => {
+export const startProgressReporting = (getPositionTicks, intervalMs = 10000, getPlayState) => {
 	stopProgressReporting();
 
 	progressInterval = setInterval(async () => {
 		const ticks = getPositionTicks();
-		if (ticks !== null && ticks !== undefined) {
-			await reportProgress(ticks);
+		if (ticks != null) {
+			const options = getPlayState ? getPlayState() : {};
+			await reportProgress(ticks, options);
 		}
 	}, intervalMs);
 };
