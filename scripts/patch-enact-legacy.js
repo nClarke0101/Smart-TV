@@ -359,6 +359,50 @@ patchFile('@enact/ui/useScroll/Scrollbar.js', [
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH 6: buffer module — replace ** exponentiation with Math.pow()
+//
+// NodePolyfillPlugin injects buffer v6.0.3 which uses the ES2016 exponentiation
+// operator (2 ** 24, etc.). Tizen 2.4's JSC (Safari 9) only supports ES2015 and
+// throws "Expected token '('" on **. Babel doesn't transpile it because
+// node_modules (except @enact/*) are excluded from the babel-loader.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[Patch 6] buffer — replace ** exponentiation with Math.pow()');
+
+const bufferPath = path.join(NODE_MODULES, '@enact/cli/node_modules/buffer/index.js');
+if (fs.existsSync(bufferPath)) {
+	let bufSrc = fs.readFileSync(bufferPath, 'utf8');
+	let bufModified = false;
+
+	// Replace numeric exponentiation: 2 ** 24 → Math.pow(2, 24)
+	const numExpRe = /(\d+)\s*\*\*\s*(\d+)/g;
+	if (numExpRe.test(bufSrc)) {
+		bufSrc = bufSrc.replace(/(\d+)\s*\*\*\s*(\d+)/g, 'Math.pow($1, $2)');
+		console.log('  [OK]   Replaced numeric ** operators with Math.pow()');
+		bufModified = true;
+	}
+
+	// Replace BigInt exponentiation: BigInt(2) ** BigInt(32) → BigInt(Math.pow(2, 32))
+	const bigIntExpRe = /BigInt\((\d+)\)\s*\*\*\s*BigInt\((\d+)\)/g;
+	if (bigIntExpRe.test(bufSrc)) {
+		bufSrc = bufSrc.replace(/BigInt\((\d+)\)\s*\*\*\s*BigInt\((\d+)\)/g,
+			'BigInt(Math.pow($1, $2))');
+		console.log('  [OK]   Replaced BigInt ** operators with BigInt(Math.pow())');
+		bufModified = true;
+	}
+
+	if (bufModified) {
+		fs.writeFileSync(bufferPath, bufSrc, 'utf8');
+		patchCount++;
+		console.log('  [SAVE] @enact/cli/node_modules/buffer/index.js');
+	} else {
+		console.log('  [SKIP] No ** operators found — already patched');
+	}
+} else {
+	console.warn('  [SKIP] @enact/cli/node_modules/buffer/index.js — file not found');
+	skipCount++;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`\n✓ Legacy patches complete: ${patchCount} files modified, ${skipCount} skipped\n`);
