@@ -27,9 +27,8 @@ const exitApp = () => {
 const ExitDialog = ({open, onCancel, onExit}) => {
 	useEffect(() => {
 		if (open) {
-			window.requestAnimationFrame(() => {
-				Spotlight.focus('exit-cancel-btn');
-			});
+			const t = setTimeout(() => Spotlight.focus('exit-cancel-btn'), 100);
+			return () => clearTimeout(t);
 		}
 	}, [open]);
 
