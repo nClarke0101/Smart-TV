@@ -403,6 +403,74 @@ if (fs.existsSync(bufferPath)) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH 7: babel-preset-enact — enable transform-regenerator
+//
+// The Enact Babel preset explicitly excludes 'transform-regenerator' from
+// @babel/preset-env (marked as "chunky/costly"). This means async/await is
+// converted to generator functions (function*) via transform-async-to-generator
+// but generators are NOT further compiled to ES5 state machines.
+//
+// Safari 9 / Tizen 2.4 JSC does NOT support generators. When the parser sees
+// `function*`, it expects '(' after 'function' and gets '*', producing:
+//   SyntaxError: Expected token '('
+//
+// Fix: Remove 'transform-regenerator' from the exclude list so preset-env
+// applies the regenerator transform, converting function* to ES5 state machines
+// using @babel/helpers' inlined regenerator runtime (no external dep needed).
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[Patch 7] babel-preset-enact — enable transform-regenerator');
+
+patchFile('@enact/cli/node_modules/babel-preset-enact/index.js', [
+	{
+		find: "// Exclude chunky/costly transforms\n\t\t\t\t\t\t'transform-regenerator',",
+		replace: "// Exclude chunky/costly transforms\n\t\t\t\t\t\t// 'transform-regenerator', // RE-ENABLED for Tizen 2.4 legacy compat",
+		description: "Remove transform-regenerator from preset-env exclude list"
+	}
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH 8: generator-function — use legacy feature-detection
+//
+// The `generator-function` package (pulled in by NodePolyfillPlugin → util →
+// is-generator-function → generator-function) has a top-level `function*(){}`
+// expression to detect the GeneratorFunction constructor. This causes a parse
+// error on engines without generator support (Tizen 2.4 / Safari 9).
+//
+// Fix: Replace index.js with the legacy.js version that uses try/catch around
+// `Function('return function* () {}')` for safe runtime detection.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[Patch 8] generator-function — safe legacy feature-detection');
+
+patchFile('@enact/cli/node_modules/generator-function/index.js', [
+	{
+		find: "const cached = /** @type {GeneratorFunctionConstructor} */ (function* () {}.constructor);",
+		replace: `var cached;
+try { cached = Function('return function* () {}')().constructor; } catch (e) { cached = false; }`,
+		description: "Replace literal function* with safe Function() detection"
+	}
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH 9: hls.js ESM build — replace ** exponentiation with Math.pow()
+//
+// hls.js v1.6.x ships both CJS (dist/hls.js) and ESM (dist/hls.mjs) builds.
+// Webpack resolves hls.js to the ESM build via the package.json "module" and
+// "exports" fields. The ESM build contains `2 ** 32` (ES2016 exponentiation)
+// in the EMSG box parser (mp4-tools), while the CJS build correctly uses
+// Math.pow(2, 32). Since node_modules are excluded from Babel, this operator
+// passes through unchanged and causes a parse error on Tizen 2.4.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[Patch 9] hls.js — replace ** exponentiation with Math.pow()');
+
+patchFile('hls.js/dist/hls.mjs', [
+	{
+		find: '2 ** 32 * leftPresentationTime',
+		replace: 'Math.pow(2, 32) * leftPresentationTime',
+		description: 'Replace 2 ** 32 with Math.pow(2, 32) in EMSG parser'
+	}
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`\n✓ Legacy patches complete: ${patchCount} files modified, ${skipCount} skipped\n`);
