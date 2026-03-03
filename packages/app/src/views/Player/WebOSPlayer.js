@@ -94,6 +94,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 	const playbackStartTimeoutRef = useRef(null);
 	const pendingResumeTicksRef = useRef(0);
 	const hasReportedStartRef = useRef(false);
+	const lastSeekTimeRef = useRef(0);
 
 	const destroyHlsPlayer = () => {
 		if (hlsPlayerRef.current) {
@@ -590,6 +591,8 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 				seekInTranscode(lastSeekTargetRef.current);
 			}, 600);
 		} else if (videoRef.current) {
+			lastSeekTimeRef.current = Date.now();
+			if (healthMonitorRef.current) healthMonitorRef.current.reset();
 			try {
 				videoRef.current.currentTime = newTime;
 			} catch (e) {
@@ -607,6 +610,8 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 		if (playMethod === 'Transcode') {
 			seekInTranscode(clampedTicks);
 		} else {
+			lastSeekTimeRef.current = Date.now();
+			if (healthMonitorRef.current) healthMonitorRef.current.reset();
 			try {
 				videoRef.current.currentTime = clampedTicks / 10000000;
 			} catch (e) {
@@ -846,6 +851,10 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 	// Handle playback health issues — if the health monitor detects stalled
 	// playback (no progress for extended period), fall back to transcoding.
 	const handleUnhealthy = useCallback(async () => {
+		if (Date.now() - lastSeekTimeRef.current < 15000) {
+			if (healthMonitorRef.current) healthMonitorRef.current.reset();
+			return;
+		}
 		console.log('[Player] Playback unhealthy, falling back to transcode');
 		if (!hasTriedTranscode && playMethod !== 'Transcode') {
 			const video = videoRef.current;
@@ -987,7 +996,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 
 	const handleWaiting = useCallback(() => {
 		setIsBuffering(true);
-		if (healthMonitorRef.current) {
+		if (healthMonitorRef.current && (Date.now() - lastSeekTimeRef.current > 15000)) {
 			healthMonitorRef.current.recordBuffer();
 		}
 	}, []);
