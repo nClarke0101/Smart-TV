@@ -89,8 +89,9 @@ Download the latest release from the [Releases page](https://github.com/Moonfin-
 
 | Platform | File | Supported Devices |
 |---|---|---|
-| **Tizen** | `.wgt` | Samsung Smart TVs (2018+, Tizen 4.0+) |
-| **webOS** | `.ipk` | LG Smart TVs (2018+, webOS 4.0+) |
+| **Tizen** | `.wgt` | Samsung Smart TVs (2016+, Tizen 2.4+) |
+| **Tizen Legacy** | `.wgt` | Samsung Smart TVs (2015-2016, Tizen 2.4) |
+| **webOS** | `.ipk` | LG Smart TVs (2016+, webOS 3.0+) |
 
 ### Sideloading — Samsung (Tizen)
 
@@ -136,6 +137,9 @@ npm install
 # Build for Samsung (creates .wgt)
 npm run build:tizen
 
+# Build for Samsung legacy (Tizen 2.4, creates .wgt)
+npm run build:tizen:legacy
+
 # Build for LG (creates .ipk)
 npm run build:webos
 
@@ -147,8 +151,8 @@ npm run dev:webos
 ```
 
 Build outputs:
-- Tizen: `Moonfin-v2.1.0.wgt` in the project root
-- webOS: `org.moonfin.webos_2.1.0_all.ipk` in `packages/build-webos/build/`
+- Tizen: `Moonfin-v2.2.0.wgt` in the project root
+- webOS: `org.moonfin.webos_2.2.0_all.ipk` in `packages/build-webos/build/`
 
 ---
 
