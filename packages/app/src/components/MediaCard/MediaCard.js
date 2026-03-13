@@ -6,7 +6,7 @@ import css from './MediaCard.module.less';
 
 const SpottableDiv = Spottable('div');
 
-const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusItem, showServerBadge = false}) => {
+const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusItem, showServerBadge = false, eagerLoad = false}) => {
 	const isLandscape = cardType === 'landscape';
 	const isSquare = cardType === 'square' || (cardType === 'portrait' && (item.Type === 'MusicAlbum' || item.Type === 'MusicArtist' || item.Type === 'Audio'));
 	const focusTimeoutRef = useRef(null);
@@ -92,7 +92,14 @@ const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusIte
 		<SpottableDiv className={cardClass} onClick={handleClick} onFocus={handleFocus}>
 			<div className={css.imageContainer}>
 				{imageUrl ? (
-					<img className={css.image} src={imageUrl} alt={item.Name} loading="lazy" />
+					<img
+						className={css.image}
+						src={imageUrl}
+						alt={item.Name}
+						loading={eagerLoad ? 'eager' : 'lazy'}
+						width={isLandscape ? 384 : isSquare ? 240 : 240}
+						height={isLandscape ? 216 : isSquare ? 240 : 360}
+					/>
 				) : (
 					<div className={css.placeholder}>{item.Name?.[0]}</div>
 				)}

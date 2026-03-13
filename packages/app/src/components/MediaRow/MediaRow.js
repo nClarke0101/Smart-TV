@@ -88,6 +88,7 @@ const MediaRow = ({
 							onSelect={handleSelect}
 							onFocusItem={onFocusItem}
 							showServerBadge={showServerBadge}
+							eagerLoad={rowIndex === 0}
 						/>
 					))}
 				</div>

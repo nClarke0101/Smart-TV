@@ -9,8 +9,7 @@
 const imageCache = new Map();
 const pendingRequests = new Map();
 
-// Maximum cache size (number of images)
-const MAX_CACHE_SIZE = 100;
+const MAX_CACHE_SIZE = 250;
 
 /**
  * Fetch and cache an image, returning a blob URL

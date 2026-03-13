@@ -748,7 +748,7 @@ const Browse = ({
 			if (item) {
 				const backdropId = getBackdropId(item);
 				if (backdropId) {
-					preloadImage(getImageUrl(serverUrl, backdropId, 'Backdrop', {maxWidth: 1920, quality: 100}));
+					preloadImage(getImageUrl(serverUrl, backdropId, 'Backdrop', {maxWidth: 1920, quality: 85}));
 				}
 				if (item.LogoUrl) {
 					preloadImage(item.LogoUrl);
@@ -1158,7 +1158,7 @@ const Browse = ({
 						>
 							<div className={css.featuredBackdrop}>
 								<img
-									src={getImageUrl(getItemServerUrl(currentFeatured), getBackdropId(currentFeatured), 'Backdrop', {maxWidth: 1920, quality: 100})}
+									src={getImageUrl(getItemServerUrl(currentFeatured), getBackdropId(currentFeatured), 'Backdrop', {maxWidth: 1920, quality: 85})}
 									alt=""
 								/>
 							</div>
