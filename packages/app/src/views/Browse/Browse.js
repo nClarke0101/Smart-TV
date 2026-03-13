@@ -112,6 +112,16 @@ const Browse = ({
 	const wasVisibleRef = useRef(true);
 	const prevFilteredRowsRef = useRef([]);
 	const filteredRowsLengthRef = useRef(0);
+	const rowRefsMap = useRef(new Map());
+	const scrollTimeoutRef = useRef(null);
+
+	const registerRowRef = useCallback((rowIndex, element) => {
+		if (element) {
+			rowRefsMap.current.set(rowIndex, element);
+		} else {
+			rowRefsMap.current.delete(rowIndex);
+		}
+	}, []);
 
 	const getItemServerUrl = useCallback((item) => {
 		return item?._serverUrl || serverUrl;
@@ -315,6 +325,16 @@ const Browse = ({
 		return result;
 	}, [allRowData, homeRowsConfig, settings.mergeContinueWatchingNextUp]);
 
+	const scrollToRow = useCallback((rowIndex) => {
+		if (scrollTimeoutRef.current) window.cancelAnimationFrame(scrollTimeoutRef.current);
+		scrollTimeoutRef.current = window.requestAnimationFrame(() => {
+			const targetRow = rowRefsMap.current.get(rowIndex);
+			if (targetRow) {
+				targetRow.scrollIntoView({block: 'start', behavior: 'auto'});
+			}
+		});
+	}, []);
+
 	const handleNavigateUp = useCallback((fromRowIndex) => {
 		if (fromRowIndex === 0) {
 			if (settings.showFeaturedBar !== false) {
@@ -327,11 +347,8 @@ const Browse = ({
 		}
 		const targetIndex = fromRowIndex - 1;
 		Spotlight.focus(`row-${targetIndex}`);
-		const targetRow = document.querySelector(`[data-row-index="${targetIndex}"]`);
-		if (targetRow) {
-			targetRow.scrollIntoView({block: 'start'});
-		}
-	}, [settings.showFeaturedBar, settings.navbarPosition]);
+		scrollToRow(targetIndex);
+	}, [settings.showFeaturedBar, settings.navbarPosition, scrollToRow]);
 
 	filteredRowsLengthRef.current = filteredRows.length;
 
@@ -339,11 +356,8 @@ const Browse = ({
 		const targetIndex = fromRowIndex + 1;
 		if (targetIndex >= filteredRowsLengthRef.current) return;
 		Spotlight.focus(`row-${targetIndex}`);
-		const targetRow = document.querySelector(`[data-row-index="${targetIndex}"]`);
-		if (targetRow) {
-			targetRow.scrollIntoView({block: 'start'});
-		}
-	}, []);
+		scrollToRow(targetIndex);
+	}, [scrollToRow]);
 
 	useEffect(() => {
 		if (settings.showFeaturedBar === false) {
@@ -360,11 +374,7 @@ const Browse = ({
 					const {rowIndex} = lastFocusState;
 					const targetRowIndex = Math.min(rowIndex, filteredRows.length - 1);
 					Spotlight.focus(`row-${targetRowIndex}`);
-
-					const targetRow = document.querySelector(`[data-row-index="${targetRowIndex}"]`);
-					if (targetRow) {
-						targetRow.scrollIntoView({block: 'start'});
-					}
+					scrollToRow(targetRowIndex);
 					lastFocusState = null;
 				}
 			}, FOCUS_DELAY_MS);
@@ -736,12 +746,7 @@ const Browse = ({
 			const contentRows = document.querySelector('[data-element="content-rows"]');
 			if (contentRows) contentRows.scrollTop = 0;
 			Spotlight.focus('row-0');
-			setTimeout(() => {
-				const firstRow = document.querySelector('[data-row-index="0"]');
-				if (firstRow) {
-					firstRow.scrollIntoView({block: 'start', behavior: 'auto'});
-				}
-			}, 50);
+			setTimeout(() => scrollToRow(0), 50);
 		}, TRANSITION_DELAY_MS);
 	}, []);
 
@@ -826,6 +831,7 @@ const Browse = ({
 							onNavigateUp={handleNavigateUp}
 							onNavigateDown={handleNavigateDown}
 							showServerBadge={unifiedMode}
+							registerRowRef={registerRowRef}
 						/>
 					))}
 					{filteredRows.length === 0 && (

@@ -1,4 +1,4 @@
-import {useCallback, useRef, memo} from 'react';
+import {useCallback, useRef, useEffect, memo} from 'react';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import MediaCard from '../MediaCard';
 import {KEYS} from '../../utils/keys';
@@ -22,13 +22,20 @@ const MediaRow = ({
 	onNavigateUp,
 	onNavigateDown,
 	showServerBadge = false,
-	className
+	className,
+	registerRowRef
 }) => {
 	const scrollerRef = useRef(null);
 	const scrollTimeoutRef = useRef(null);
+	const rowElementRef = useRef(null);
 
-	// Unique key prefix to avoid duplicate keys when same item appears in multiple rows
 	const keyPrefix = rowId || title || rowIndex || '';
+
+	useEffect(() => {
+		const el = rowElementRef.current;
+		registerRowRef?.(rowIndex, el);
+		return () => registerRowRef?.(rowIndex, null);
+	}, [rowIndex, registerRowRef]);
 
 	const handleSelect = useCallback((item) => {
 		onSelectItem?.(item);
@@ -71,6 +78,7 @@ const MediaRow = ({
 
 	return (
 		<RowContainer
+			ref={rowElementRef}
 			className={`${css.row}${className ? ` ${className}` : ''}`}
 			spotlightId={`row-${rowIndex}`}
 			data-row-index={rowIndex}
