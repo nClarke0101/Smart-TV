@@ -624,7 +624,11 @@ const AppContent = (props) => {
 	}, [navigateTo]);
 
 	if (isLoading || !authChecked) {
-		return <div className={css.loading} />;
+		return (
+			<div className={css.loading}>
+				<LoadingSpinner />
+			</div>
+		);
 	}
 
 	const getActiveView = () => {

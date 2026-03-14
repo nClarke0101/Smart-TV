@@ -22,6 +22,16 @@ const LS2_TIMEOUT_MS = 5000;
 let storageInitialized = false;
 let useLocalStorage = false;
 let dbServiceUri = null;
+let initResolve = null;
+let initPromise = null;
+
+const waitForInit = () => {
+	if (storageInitialized) return Promise.resolve();
+	if (!initPromise) {
+		initPromise = new Promise((resolve) => { initResolve = resolve; });
+	}
+	return initPromise;
+};
 
 const localStorageGet = (key) => {
 	try {
@@ -85,6 +95,7 @@ export const initStorage = async () => {
 	if (!LS2) {
 		useLocalStorage = true;
 		storageInitialized = true;
+		if (initResolve) initResolve();
 		console.log('[storage] LS2Request unavailable, using localStorage');
 		return true;
 	}
@@ -112,6 +123,7 @@ export const initStorage = async () => {
 		if (ok) {
 			dbServiceUri = DB_SERVICES[i];
 			storageInitialized = true;
+			if (initResolve) initResolve();
 			return true;
 		}
 	}
@@ -119,10 +131,12 @@ export const initStorage = async () => {
 	console.warn('[storage] All DB8 endpoints failed, using localStorage');
 	useLocalStorage = true;
 	storageInitialized = true;
+	if (initResolve) initResolve();
 	return true;
 };
 
 export const getFromStorage = async (key) => {
+	await waitForInit();
 	const LS2 = await loadLS2Request();
 
 	if (!LS2 || useLocalStorage) {
@@ -149,13 +163,13 @@ export const getFromStorage = async (key) => {
 };
 
 export const saveToStorage = async (key, value) => {
+	await waitForInit();
 	const LS2 = await loadLS2Request();
 
 	if (!LS2 || useLocalStorage) {
 		return localStorageSave(key, value);
 	}
 
-	// Delete existing, then insert. Both wrapped with timeouts.
 	await ls2WithTimeout(LS2, {
 		service: dbServiceUri,
 		method: 'del',
@@ -169,7 +183,7 @@ export const saveToStorage = async (key, value) => {
 		fallback: false
 	}, LS2_TIMEOUT_MS);
 
-	return ls2WithTimeout(LS2, {
+	const result = await ls2WithTimeout(LS2, {
 		service: dbServiceUri,
 		method: 'put',
 		parameters: {
@@ -182,16 +196,20 @@ export const saveToStorage = async (key, value) => {
 		onSuccess: () => true,
 		fallback: localStorageSave(key, value)
 	}, LS2_TIMEOUT_MS);
+
+	localStorageSave(key, value);
+	return result;
 };
 
 export const removeFromStorage = async (key) => {
+	await waitForInit();
 	const LS2 = await loadLS2Request();
 
 	if (!LS2 || useLocalStorage) {
 		return localStorageRemove(key);
 	}
 
-	return ls2WithTimeout(LS2, {
+	const result = await ls2WithTimeout(LS2, {
 		service: dbServiceUri,
 		method: 'del',
 		parameters: {
@@ -203,4 +221,7 @@ export const removeFromStorage = async (key) => {
 		onSuccess: () => true,
 		fallback: localStorageRemove(key)
 	}, LS2_TIMEOUT_MS);
+
+	localStorageRemove(key);
+	return result;
 };

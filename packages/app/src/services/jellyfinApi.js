@@ -79,10 +79,12 @@ export const getDeviceId = () => deviceId;
 const request = async (endpoint, options = {}) => {
 	const url = `${currentServer}${endpoint}`;
 
+	const authHeader = getAuthHeader();
 	const response = await fetch(url, {
 		method: options.method || 'GET',
 		headers: {
-			'Authorization': getAuthHeader(),
+			'Authorization': authHeader,
+			'X-Emby-Authorization': authHeader,
 			'Content-Type': 'application/json',
 			...options.headers
 		},
@@ -367,10 +369,12 @@ export const createApiForServer = (serverUrl, token, userId) => {
 	const serverRequest = async (endpoint, options = {}) => {
 		const requestUrl = `${url}${endpoint}`;
 
+		const authHeader = getServerAuthHeader();
 		const response = await fetch(requestUrl, {
 			method: options.method || 'GET',
 			headers: {
-				'Authorization': getServerAuthHeader(),
+				'Authorization': authHeader,
+				'X-Emby-Authorization': authHeader,
 				'Content-Type': 'application/json',
 				...options.headers
 			},

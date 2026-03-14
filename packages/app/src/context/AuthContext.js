@@ -55,58 +55,55 @@ export const AuthProvider = ({children}) => {
 
 	useEffect(() => {
 		const init = async () => {
-			await initStorage();
-			await jellyfinApi.initDeviceId();
+			try {
+				await initStorage();
+				await jellyfinApi.initDeviceId();
 
-			// Load multi-server data
-			const {active} = await loadServers();
+				const {active} = await loadServers();
 
-			// Check auto-login setting
-			const storedSettings = await getFromStorage('settings');
-			const autoLogin = storedSettings?.autoLogin !== false; // default true
+				const storedSettings = await getFromStorage('settings');
+				const autoLogin = storedSettings?.autoLogin !== false;
 
-			// If we have an active server, use it
-			if (active) {
-				// Always remember the last server for the login screen
-				setLastServerUrl(active.url);
-				setLastServerName(active.name);
-
-				if (autoLogin) {
-					jellyfinApi.setServer(active.url);
-					jellyfinApi.setAuth(active.userId, active.accessToken);
-					setServerUrl(active.url);
-					setServerName(active.name);
-					setAccessToken(active.accessToken);
-
-					// Try to get user info
-					try {
-						const userInfo = await jellyfinApi.api.getUserConfiguration();
-						setUser(userInfo);
-					} catch (e) {
-						// If we can't get user info, use what we have
-						setUser({Id: active.userId, Name: active.username});
-					}
-
-					setIsAuthenticated(true);
-				}
-			} else {
-				// Fallback to old auth format
-				const storedAuth = await getFromStorage('auth');
-				if (storedAuth) {
-					setLastServerUrl(storedAuth.serverUrl);
+				if (active) {
+					setLastServerUrl(active.url);
+					setLastServerName(active.name);
 
 					if (autoLogin) {
-						jellyfinApi.setServer(storedAuth.serverUrl);
-						jellyfinApi.setAuth(storedAuth.userId, storedAuth.token);
-						setServerUrl(storedAuth.serverUrl);
-						setAccessToken(storedAuth.token);
-						setUser(storedAuth.user);
+						jellyfinApi.setServer(active.url);
+						jellyfinApi.setAuth(active.userId, active.accessToken);
+						setServerUrl(active.url);
+						setServerName(active.name);
+						setAccessToken(active.accessToken);
+
+						try {
+							const userInfo = await jellyfinApi.api.getUserConfiguration();
+							setUser(userInfo);
+						} catch (e) {
+							setUser({Id: active.userId, Name: active.username});
+						}
+
 						setIsAuthenticated(true);
 					}
-				}
-			}
+				} else {
+					const storedAuth = await getFromStorage('auth');
+					if (storedAuth) {
+						setLastServerUrl(storedAuth.serverUrl);
 
-			setIsLoading(false);
+						if (autoLogin) {
+							jellyfinApi.setServer(storedAuth.serverUrl);
+							jellyfinApi.setAuth(storedAuth.userId, storedAuth.token);
+							setServerUrl(storedAuth.serverUrl);
+							setAccessToken(storedAuth.token);
+							setUser(storedAuth.user);
+							setIsAuthenticated(true);
+						}
+					}
+				}
+			} catch (e) {
+				console.error('[AUTH] Init failed:', e);
+			} finally {
+				setIsLoading(false);
+			}
 		};
 		init();
 	}, [loadServers]);
