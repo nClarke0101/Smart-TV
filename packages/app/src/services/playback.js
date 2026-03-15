@@ -100,9 +100,8 @@ const selectMediaSource = (mediaSources, capabilities, options) => {
 };
 
 const determinePlayMethod = (mediaSource, capabilities, options = {}) => {
-	// Force DirectPlay debug override — skips all codec/HDR/bitrate checks
-	if (options.forceDirectPlay && mediaSource.SupportsDirectPlay) {
-		console.log('[playback] Force DirectPlay enabled — bypassing compatibility checks');
+	if (options.forceDirectPlay) {
+		console.log('[playback] Force DirectPlay — bypassing all checks, server SupportsDirectPlay:', mediaSource.SupportsDirectPlay);
 		return PlayMethod.DirectPlay;
 	}
 
@@ -326,9 +325,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 
 	let mediaSource = selectMediaSource(playbackInfo.MediaSources, capabilities, options);
 
-	// Auto-select a compatible audio stream if the user hasn't explicitly chosen one.
-	// This prevents the server from forcing transcode when the default audio track
-	// is unsupported (e.g., TrueHD primary + AC3 secondary in a 4K HDR remux).
+	// Auto-select a compatible audio stream to avoid unnecessary transcoding
 	let audioStreamIndex = options.audioStreamIndex;
 	if (audioStreamIndex == null && mediaSource.DefaultAudioStreamIndex != null) {
 		const defaultAudioStream = mediaSource.MediaStreams?.find(
