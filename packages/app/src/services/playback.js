@@ -451,15 +451,20 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		mimeType = getMimeType(mediaSource.Container);
 	}
 
-	// Starfish needs a DV codec in <source type="..."> to activate the DV decoder
+	// Starfish needs a DV codec hint in the MIME type to activate the DV decoder
 	if (playMethod !== PlayMethod.Transcode && !isAudio && videoStream?.VideoRangeType) {
 		const rangeType = videoStream.VideoRangeType.toUpperCase();
 		if (rangeType.includes('DOVI')) {
-			// Profile 8 (dvh1): cross-compatible — has HDR10/HLG/SDR base layer
-			// Profile 5 (dvhe): pure DV — no backward-compatible base layer
-			const dvCodec = rangeType === 'DOVI' ? 'dvhe.05' : 'dvh1.08';
+			const streamCodec = (videoStream.Codec || '').toLowerCase();
+			let dvCodec;
+			if (streamCodec === 'dvhe') {
+				dvCodec = 'dvhe.05';
+			} else if (streamCodec === 'dvh1') {
+				dvCodec = 'dvh1.08';
+			} else {
+				dvCodec = rangeType === 'DOVI' ? 'dvhe.05' : 'dvh1.08';
+			}
 			mimeType = mimeType + '; codecs="' + dvCodec + '"';
-			console.log('[playback] Enhanced MIME type with DV codec:', mimeType);
 		}
 	}
 
@@ -940,6 +945,22 @@ export const updateCurrentSession = (updates) => {
 
 export const isDirectPlay = () => currentSession?.playMethod === PlayMethod.DirectPlay;
 
+/**
+ * Rewrite the StartTimeTicks parameter in an existing HLS transcode URL.
+ * This allows seeking within the same transcode session without tearing down
+ * the player pipeline or creating a new PlaySessionId.
+ */
+export const rewriteTranscodeSeekUrl = (url, newStartTicks) => {
+	if (!url) return url;
+	// Replace existing StartTimeTicks value
+	if (url.includes('StartTimeTicks=')) {
+		return url.replace(/StartTimeTicks=\d+/, 'StartTimeTicks=' + Math.floor(newStartTicks));
+	}
+	// Append if not present
+	const separator = url.includes('?') ? '&' : '?';
+	return url + separator + 'StartTimeTicks=' + Math.floor(newStartTicks);
+};
+
 export const getPlaybackUrl = async (itemId, startPositionTicks = 0, options = {}) => {
 	return getPlaybackInfo(itemId, {...options, startPositionTicks});
 };
@@ -951,6 +972,7 @@ export default {
 	getPlaybackInfo,
 	getPlaybackInfoWithFallback,
 	getPlaybackUrl,
+	rewriteTranscodeSeekUrl,
 	getSubtitleUrl,
 	fetchItemChapters,
 	getChapterImageUrl,

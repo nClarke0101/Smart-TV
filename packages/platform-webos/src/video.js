@@ -158,6 +158,8 @@ export const getPlayMethod = (mediaSource, capabilities) => {
 	if (capabilities.vp9) supportedVideoCodecs.push('vp9');
 	supportedVideoCodecs.push('vp8');
 	if (capabilities.dolbyVision) supportedVideoCodecs.push('dvhe', 'dvh1', 'dovi');
+	// dvh1 (DV Profile 8) has an HEVC base layer playable without native DV
+	if (!capabilities.dolbyVision && capabilities.hevc) supportedVideoCodecs.push('dvh1');
 
 	// Build supported audio codecs list (with container-specific restrictions)
 	const audioCodec = (audioStream?.Codec || '').toLowerCase();

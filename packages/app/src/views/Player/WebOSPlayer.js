@@ -95,6 +95,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 	const pendingResumeTicksRef = useRef(0);
 	const hasReportedStartRef = useRef(false);
 	const lastSeekTimeRef = useRef(0);
+	const mediaUrlRef = useRef(null);
 
 	const destroyHlsPlayer = () => {
 		if (hlsPlayerRef.current) {
@@ -528,7 +529,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 
 	useEffect(() => {
 		if (mediaUrl) {
-			console.log('[Player] mediaUrl set:', mediaUrl);
+			mediaUrlRef.current = mediaUrl;
 		}
 	}, [mediaUrl]);
 
@@ -541,52 +542,44 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 			seekDebounceTimerRef.current = null;
 		}
 
-		console.log('[Player] seekInTranscode: requesting new stream at', seekPositionTicks, 'ticks (', seekPositionTicks / 10000000, 's)');
+		console.log('[Player] seekInTranscode: seeking to', seekPositionTicks, 'ticks (', seekPositionTicks / 10000000, 's)');
 
 		sourceTransitionRef.current = true;
 
 		try {
-			try {
-				await playback.reportStop(positionRef.current);
-			} catch (e) {
-				console.warn('[Player] seekInTranscode: reportStop failed:', e);
-			}
-
-			destroyHlsPlayer();
 			const video = videoRef.current;
-			if (video) {
-				try { video.pause(); } catch (e) { /* ignore */ }
-				while (video.firstChild) video.removeChild(video.firstChild);
-				video.src = '';
-				video.removeAttribute('src');
+			const currentUrl = mediaUrlRef.current;
+			const newUrl = playback.rewriteTranscodeSeekUrl(currentUrl, seekPositionTicks);
+
+			if (!newUrl || newUrl === currentUrl) {
+				console.warn('[Player] seekInTranscode: URL unchanged, skipping seek');
+				seekingTranscodeRef.current = false;
+				sourceTransitionRef.current = false;
+				return;
 			}
 
-			const result = await playback.getPlaybackInfo(item.Id, {
-				startPositionTicks: seekPositionTicks,
-				maxBitrate: selectedQuality || settings.maxBitrate,
-				enableDirectPlay: false,
-				enableDirectStream: false,
-				enableTranscoding: true,
-				mediaSourceId: mediaSourceId,
-				item: item
-			});
+			positionRef.current = seekPositionTicks;
+			lastSeekTargetRef.current = seekPositionTicks;
+			transcodeOffsetTicksRef.current = seekPositionTicks;
+			transcodeOffsetDetectedRef.current = false;
 
-			if (result.url) {
-				positionRef.current = seekPositionTicks;
-				lastSeekTargetRef.current = seekPositionTicks;
-				transcodeOffsetTicksRef.current = seekPositionTicks;
-				transcodeOffsetDetectedRef.current = false;
-
-				// Wait for server to start FFmpeg and produce initial segments
-				await new Promise(resolve => setTimeout(resolve, 1500));
-
-				setMediaUrl(result.url);
-				setPlayMethod(result.playMethod);
-				setMimeType(result.mimeType || 'video/mp4');
-				playSessionRef.current = result.playSessionId;
-
-				console.log('[Player] seekInTranscode: new stream loaded at', seekPositionTicks / 10000000, 'seconds');
+			if (hlsPlayerRef.current) {
+				hlsPlayerRef.current.loadSource(newUrl);
+			} else if (video) {
+				video.src = newUrl;
+				if (mimeType) video.type = mimeType;
+				video.load();
+				const p = video.play();
+				if (p && typeof p.catch === 'function') {
+					p.catch(e => {
+						if (e.name !== 'AbortError') {
+							console.error('[Player] seekInTranscode play() rejected:', e);
+						}
+					});
+				}
 			}
+
+			mediaUrlRef.current = newUrl;
 		} catch (err) {
 			console.error('[Player] seekInTranscode failed:', err);
 			setError('Failed to seek - please try again');
@@ -599,7 +592,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 				setTimeout(() => seekInTranscode(lastSeekTargetRef.current), 100);
 			}
 		}
-	}, [item, selectedQuality, settings.maxBitrate, mediaSourceId]);
+	}, [mimeType]);
 
 	const seekByOffset = useCallback((deltaSec, updateSeekPosition) => {
 		const baseTime = (playMethod === 'Transcode')

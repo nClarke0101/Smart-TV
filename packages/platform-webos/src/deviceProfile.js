@@ -100,13 +100,13 @@ export const canPlayNativeHls = () => {
 		|| video.canPlayType('application/vnd.apple.mpegURL').replace(/no/, ''));
 };
 
-// Per LG developer documentation, DTS support varies by webOS version AND container:
+// DTS support varies by webOS version AND container:
 //   webOS 4/4.5: DTS in AVI + MKV (unconditionally supported)
 //   webOS 5/6/22: DTS in MKV only
 //   webOS 23+: DTS in MKV + MP4 + TS (model-specific, detected via tv.model.edidType)
-// The Luna API config key 'tv.model.edidType' indicates DTS support when it contains 'dts'.
-// e.g. "TrueHD+dts" means DTS is supported, plain "TrueHD" means no DTS.
-// This is how LG checks DTS capability in their own Chromium fork.
+// The undocumented Luna config key 'tv.model.edidType' indicates DTS support when it
+// contains 'dts'. e.g. "TrueHD+dts" = DTS supported, plain "TrueHD" = no DTS.
+// This key is NOT in LG's public developer docs but is known from reverse engineering.
 //
 // Note on soundbars: When edidType reports DTS support, the TV can decode DTS internally.
 // However, if a soundbar is connected that doesn't support DTS, the TV decodes DTS and
@@ -168,8 +168,10 @@ export const getDeviceCapabilities = async () => {
 	const cfg = configData.configs || {};
 	const webosVersion = detectWebOSVersion(deviceInfoData.sdkVersion);
 
-	// Get container support from documented webOS specifications
 	const containerSupport = getDocumentedContainerSupport(webosVersion);
+
+	const isUhd = cfg['tv.hw.panelResolution'] === 'UD' || cfg['tv.hw.panelResolution'] === '8K' || deviceInfoData.uhd || false;
+	const isOled = cfg['tv.hw.displayType'] === 'OLED' || (cfg['tv.model.moduleBackLightType'] || '').toLowerCase() === 'oled' || deviceInfoData.oled || false;
 
 	// DTS detection: tv.model.edidType contains 'dts' when DTS is supported
 	// e.g. "TrueHD+dts" = DTS supported, plain "TrueHD" = no DTS
@@ -192,30 +194,33 @@ export const getDeviceCapabilities = async () => {
 
 		screenWidth: deviceInfoData.screenWidth || 1920,
 		screenHeight: deviceInfoData.screenHeight || 1080,
-		uhd: cfg['tv.hw.panelResolution'] === 'UD' || cfg['tv.hw.panelResolution'] === '8K' || deviceInfoData.uhd || false,
+		uhd: isUhd,
 		uhd8K: cfg['tv.hw.panelResolution'] === '8K' || cfg['tv.hw.bSupport_8K_resolution'] === true || deviceInfoData.uhd8K || false,
-		oled: cfg['tv.hw.displayType'] === 'OLED' || (cfg['tv.model.moduleBackLightType'] || '').toLowerCase() === 'oled' || deviceInfoData.oled || false,
+		oled: isOled,
 
-		// HDR10/HLG: All webOS 4+ TVs support HDR10 and HLG via HEVC Main10 profile
 		hdr10: cfg['tv.model.supportHDR'] === true || webosVersion >= 4,
-		// webOS has no native HDR10+ support, but HDR10+ content plays fine on HDR10
-		// devices (dynamic metadata is simply ignored). Set to match hdr10 so we
-		// don't unnecessarily force a transcode for HDR10+ files.
+		// HDR10+ has no native webOS support, but content plays fine as HDR10
+		// (dynamic metadata is ignored). Match hdr10 to avoid unnecessary transcoding.
 		hdr10Plus: cfg['tv.model.supportHDR'] === true || webosVersion >= 4,
 		hlg: cfg['tv.model.supportHDR'] === true || webosVersion >= 4,
 
-		// Dolby Vision: tv.model.supportDolbyVisionHDR is the correct key
-		// webOS 4+ can play DV Profile 8 fallback layers (HDR10/SDR) even without native DV
-		dolbyVision: cfg['tv.model.supportDolbyVisionHDR'] === true,
+		// DV detection: webOS 4+ UHD/OLED TVs have DV hardware. Luna config keys
+		// (tv.model.supportDolbyVisionHDR) exist in webOS OSE configd but aren't in
+		// LG's public docs — used as supplementary positive signal only.
+		dolbyVision: (() => {
+			if (webosVersion >= 4 && (isUhd || isOled)) return true;
+			const lunaVal = cfg['tv.model.supportDolbyVisionHDR'];
+			if (lunaVal === true || lunaVal === 'true' || lunaVal === 'Y' || lunaVal === 1) return true;
+			const lunaVal2 = cfg['tv.model.supportDolbyVision'];
+			if (lunaVal2 === true || lunaVal2 === 'true' || lunaVal2 === 'Y' || lunaVal2 === 1) return true;
+			return false;
+		})(),
 
-		// Dolby Atmos: detected from tv.model.soundModeType containing "Dolby Atmos"
 		dolbyAtmos: (cfg['tv.model.soundModeType'] || '').includes('Dolby Atmos'),
-		// Per-container DTS support based on tv.model.edidType containing 'dts'
 		dts: dtsSupport,
 		ac3: testAc3Support(),
-		eac3: true, // DD+ supported on all webOS 4+
-		// TrueHD/DTS-HD: webOS can only PASSTHROUGH these to an AV receiver, not decode internally
-		// Note: tv.model.edidType may say "TrueHD" but this does NOT mean actual TrueHD decode support
+		eac3: true,
+		// webOS can only passthrough TrueHD/DTS-HD to an AV receiver, not decode internally
 		truehd: false,
 		dtshd: false,
 
@@ -227,8 +232,7 @@ export const getDeviceCapabilities = async () => {
 
 		nativeHls: containerSupport.hls,
 		hasNativeHls: canPlayNativeHls(),
-		// fMP4 HLS segments used for DV-capable TVs to preserve RPU metadata
-		nativeHlsFmp4: cfg['tv.model.supportDolbyVisionHDR'] === true,
+		nativeHlsFmp4: webosVersion >= 5,
 		hlsAc3: webosVersion >= 5,
 		hlsByteRange: webosVersion >= 4,
 
@@ -236,46 +240,26 @@ export const getDeviceCapabilities = async () => {
 		ddrSize: cfg['tv.hw.ddrSize'] || 0
 	};
 
-	// Log HDR detection details for debugging
-	console.log('[deviceProfile] HDR detection:', {
-		webosVersion,
-		'tv.model.supportHDR': cfg['tv.model.supportHDR'],
-		'tv.model.supportDolbyVisionHDR': cfg['tv.model.supportDolbyVisionHDR'],
-		'tv.model.edidType': cfg['tv.model.edidType'],
-		'tv.model.soundModeType': cfg['tv.model.soundModeType'],
-		resultHdr10: cachedCapabilities.hdr10,
-		resultHlg: cachedCapabilities.hlg,
-		resultHdr10Plus: cachedCapabilities.hdr10Plus,
-		resultDolbyVision: cachedCapabilities.dolbyVision,
-		resultDts: edidHasDts,
-		note: 'HDR10/HLG enabled for all webOS 4+ per HEVC Main10'
-	});
 	console.log('[deviceProfile] Capabilities:', cachedCapabilities);
 	return cachedCapabilities;
 };
 
 const buildVideoRangeTypes = (caps) => {
-	// Base: SDR always supported
 	let rangeTypes = ['SDR'];
 
-	// webOS 4+ without native Dolby Vision can still play DV content
-	// using the SDR fallback layer (DOVIWithSDR)
 	const isWebOsWithoutDV = caps.webosVersion >= 4 && !caps.dolbyVision;
 	if (isWebOsWithoutDV) {
 		rangeTypes.push('DOVIWithSDR');
 	}
 
-	// HDR10 support (all webOS 4+ TVs)
 	if (caps.hdr10) {
 		rangeTypes.push('HDR10', 'HDR10Plus');
 
-		// webOS without native DV can play HDR10 fallback from DV content
 		if (isWebOsWithoutDV) {
 			rangeTypes.push('DOVIWithHDR10', 'DOVIWithHDR10Plus', 'DOVIWithEL', 'DOVIWithELHDR10Plus', 'DOVIInvalid');
 		}
 	}
 
-	// HLG support (all webOS 4+ TVs)
 	if (caps.hlg) {
 		rangeTypes.push('HLG');
 
@@ -284,16 +268,11 @@ const buildVideoRangeTypes = (caps) => {
 		}
 	}
 
-	// Native Dolby Vision support (only if Luna API confirms)
 	if (caps.dolbyVision) {
-		// DV Profile 5 (single layer) and Profile 8 (with fallback layers)
 		rangeTypes.push('DOVI', 'DOVIWithHDR10', 'DOVIWithHLG', 'DOVIWithSDR', 'DOVIWithHDR10Plus');
-		// webOS can play fallback of Profile 7 and most invalid profiles
 		rangeTypes.push('DOVIWithEL', 'DOVIWithELHDR10Plus', 'DOVIInvalid');
 	}
 
-	console.log('[deviceProfile] buildVideoRangeTypes:', rangeTypes.join('|'),
-		'(webOS:', caps.webosVersion, 'hdr10:', caps.hdr10, 'hlg:', caps.hlg, 'dv:', caps.dolbyVision, ')');
 	return rangeTypes.join('|');
 };
 
@@ -301,7 +280,8 @@ const buildDirectPlayProfiles = (caps) => {
 	const profiles = [];
 
 	const mp4VideoCodecs = ['h264'];
-	if (caps.hevc) mp4VideoCodecs.push('hevc');
+	if (caps.hevc) mp4VideoCodecs.push('hevc', 'dvh1');
+	if (caps.dolbyVision) mp4VideoCodecs.push('dvhe');
 	if (caps.av1) mp4VideoCodecs.push('av1');
 
 	// Per-container audio codecs based on LG's official AV format docs.
@@ -333,11 +313,6 @@ const buildDirectPlayProfiles = (caps) => {
 	if (caps.ac3) aviAudioCodecs.push('ac3');
 	if (dts.avi) aviAudioCodecs.push('dca', 'dts');
 
-	console.log('[deviceProfile] Building DirectPlay profiles - caps.eac3:', caps.eac3, 'caps.webosVersion:', caps.webosVersion);
-	console.log('[deviceProfile] mp4AudioCodecs:', mp4AudioCodecs);
-	console.log('[deviceProfile] mkvAudioCodecs:', mkvAudioCodecs);
-	console.log('[deviceProfile] tsAudioCodecs:', tsAudioCodecs);
-
 	const webmVideoCodecs = ['vp8'];
 	if (caps.vp9) webmVideoCodecs.push('vp9');
 	if (caps.av1) webmVideoCodecs.push('av1');
@@ -363,7 +338,8 @@ const buildDirectPlayProfiles = (caps) => {
 	if (caps.mkv) {
 		// MKV supports broader video codecs per LG docs: MPEG-2, MPEG-4, H.264, VP8, VP9, HEVC, AV1
 		const mkvVideoCodecs = ['h264', 'mpeg4', 'mpeg2video', 'vp8'];
-		if (caps.hevc) mkvVideoCodecs.push('hevc');
+		if (caps.hevc) mkvVideoCodecs.push('hevc', 'dvh1');
+		if (caps.dolbyVision) mkvVideoCodecs.push('dvhe');
 		if (caps.vp9) mkvVideoCodecs.push('vp9');
 		if (caps.av1) mkvVideoCodecs.push('av1');
 
@@ -378,7 +354,8 @@ const buildDirectPlayProfiles = (caps) => {
 	if (caps.ts) {
 		// TS per LG docs: H.264, HEVC, MPEG-2; VC-1 is only documented in ASF/WMV
 		const tsVideoCodecs = ['h264'];
-		if (caps.hevc) tsVideoCodecs.push('hevc');
+		if (caps.hevc) tsVideoCodecs.push('hevc', 'dvh1');
+		if (caps.dolbyVision) tsVideoCodecs.push('dvhe');
 		tsVideoCodecs.push('mpeg2video');
 
 		profiles.push({
@@ -391,7 +368,8 @@ const buildDirectPlayProfiles = (caps) => {
 
 	// M2TS (Blu-ray transport stream): H.264, HEVC (UHD Blu-ray), VC-1, MPEG-2
 	const m2tsVideoCodecs = ['h264', 'vc1', 'mpeg2video'];
-	if (caps.hevc) m2tsVideoCodecs.push('hevc');
+	if (caps.hevc) m2tsVideoCodecs.push('hevc', 'dvh1');
+	if (caps.dolbyVision) m2tsVideoCodecs.push('dvhe');
 
 	profiles.push({
 		Container: 'm2ts',
@@ -453,7 +431,8 @@ const buildDirectPlayProfiles = (caps) => {
 
 	// MOV per LG docs: H.264/AVC, MPEG-4, HEVC, AV1
 	const movVideoCodecs = ['h264', 'mpeg4'];
-	if (caps.hevc) movVideoCodecs.push('hevc');
+	if (caps.hevc) movVideoCodecs.push('hevc', 'dvh1');
+	if (caps.dolbyVision) movVideoCodecs.push('dvhe');
 	if (caps.av1) movVideoCodecs.push('av1');
 
 	profiles.push({
@@ -512,31 +491,19 @@ export const getJellyfinDeviceProfile = async () => {
 	const maxStreamingBitrate = 120_000_000;
 	const maxAudioChannels = caps.dolbyAtmos ? '8' : '6';
 
-	console.log('[deviceProfile] Video Range Types:', videoRangeTypes, '(hdr10:', caps.hdr10, 'hlg:', caps.hlg, 'dolbyVision:', caps.dolbyVision, ')');
-	console.log('[deviceProfile] DirectPlayProfiles:', directPlayProfiles.length, 'profiles');
-	console.log('[deviceProfile] hasNativeHls:', caps.hasNativeHls);
-
-	// Transcoding profiles — strategy depends on whether native HLS is available:
-	// Starfish present (real TV): HEVC preferred, full audio, surround
-	// No Starfish (emulator/VM): hls.js/MSE — H.264 + AAC only (Chrome 68 MSE limits)
-	//
-	// Container choice for HLS segments:
-	// - DV-capable TVs use fMP4 segments ('mp4') so FFmpeg preserves Dolby Vision
-	//   RPU metadata during audio-only transcodes. MPEG-TS muxing strips RPU NALs,
-	//   causing DV content to fall back to plain HDR10.
-	// - Non-DV TVs use MPEG-TS ('ts') which has broader compatibility.
-	const hlsContainer = caps.dolbyVision ? 'mp4' : 'ts';
+	// fMP4 preserves DV RPU metadata; MPEG-TS strips it. Use fMP4 on webOS 5+.
+	const hlsContainer = caps.nativeHlsFmp4 ? 'mp4' : 'ts';
 	let transcodingProfiles;
 
 	if (caps.hasNativeHls) {
 		const hlsAudioCodecs = caps.eac3 ? 'aac,mp2,ac3,eac3' : (caps.ac3 ? 'aac,mp2,ac3' : 'aac,mp2');
-		console.log('[deviceProfile] Using native Starfish HLS transcoding — HEVC + full audio, container:', hlsContainer);
+		const hlsVideoCodec = caps.dolbyVision ? 'hevc,dvh1,dvhe' : 'hevc';
 		transcodingProfiles = [
 			...(caps.hevc ? [{
 				Container: hlsContainer,
 				Type: 'Video',
 				AudioCodec: hlsAudioCodecs,
-				VideoCodec: 'hevc',
+				VideoCodec: hlsVideoCodec,
 				Context: 'Streaming',
 				Protocol: 'hls',
 				MaxAudioChannels: maxAudioChannels,
@@ -556,7 +523,6 @@ export const getJellyfinDeviceProfile = async () => {
 			},
 		];
 	} else {
-		console.log('[deviceProfile] No native HLS — using hls.js/MSE transcoding — H.264 + AAC only');
 		transcodingProfiles = [
 			{
 				Container: hlsContainer,
@@ -596,19 +562,8 @@ export const getJellyfinDeviceProfile = async () => {
 		}
 	);
 
-	// H.264 level based on webOS version and panel resolution
-	// Per LG docs: webOS 4+ UHD models support H.264 Level 5.1 at 3840x2160@30P
-	// Non-UHD models: Level 4.2 for 1080p@60P
 	const h264MaxLevel = (caps.webosVersion >= 4 && (caps.uhd || caps.uhd8K)) ? '51' : '42';
-
-	// HEVC level per panel resolution (per LG AV format docs)
-	// 8K → Level 6.1 (Main/Main10@L6.1, up to 7680x4320@60P)
-	// UHD → Level 5.1 (Main/Main10@L5.1, up to 3840x2160@60P)
-	// FHD → Level 4.1 (Main/Main10@L4.1, up to 1920x1080@60P)
 	const hevcMaxLevel = caps.uhd8K ? '186' : caps.uhd ? '153' : '123';
-
-	console.log('[deviceProfile] Codec levels — H.264:', h264MaxLevel, 'HEVC:', hevcMaxLevel,
-		'(webOS', caps.webosVersion, ', UHD:', caps.uhd, ', 8K:', caps.uhd8K, ')');
 
 	const codecProfiles = [
 		{
@@ -659,6 +614,42 @@ export const getJellyfinDeviceProfile = async () => {
 				}
 			]
 		},
+		...(caps.hevc ? [{
+			Type: 'Video',
+			Codec: 'dvh1',
+			Conditions: [
+				{
+					Condition: 'EqualsAny',
+					Property: 'VideoRangeType',
+					Value: videoRangeTypes,
+					IsRequired: false
+				},
+				{
+					Condition: 'LessThanEqual',
+					Property: 'VideoLevel',
+					Value: hevcMaxLevel,
+					IsRequired: false
+				}
+			]
+		}] : []),
+		...(caps.dolbyVision ? [{
+			Type: 'Video',
+			Codec: 'dvhe',
+			Conditions: [
+				{
+					Condition: 'EqualsAny',
+					Property: 'VideoRangeType',
+					Value: videoRangeTypes,
+					IsRequired: false
+				},
+				{
+					Condition: 'LessThanEqual',
+					Property: 'VideoLevel',
+					Value: hevcMaxLevel,
+					IsRequired: false
+				}
+			]
+		}] : []),
 		{
 			Type: 'Video',
 			Codec: 'vp9',
