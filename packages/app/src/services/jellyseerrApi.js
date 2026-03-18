@@ -485,8 +485,8 @@ export const discoverTv = async (page = 1) => {
 return request(`/discover/tv?page=${page}`);
 };
 
-export const trending = async () => {
-return request('/discover/trending');
+export const trending = async (page = 1) => {
+return request(`/discover/trending?page=${page}`);
 };
 
 export const trendingMovies = async (page = 1) => {

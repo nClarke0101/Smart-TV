@@ -247,11 +247,17 @@ const DiscoverRow = memo(function DiscoverRow({
 			e.preventDefault();
 			e.stopPropagation();
 			onNavigateDown?.(rowIndex);
+		} else if (e.keyCode === KEYS.LEFT) {
+			const firstSpottable = e.currentTarget.querySelector('.spottable');
+			if (firstSpottable && firstSpottable.contains(document.activeElement)) {
+				e.preventDefault();
+				e.stopPropagation();
+				Spotlight.focus('navbar');
+			}
 		}
 	}, [rowIndex, onNavigateUp, onNavigateDown]);
 
 	const handleFocus = useCallback((e) => {
-		// Track focused row for restoration
 		onRowFocus?.(rowIndex);
 
 		const card = e.target.closest(`.${css.mediaCard}, .${css.genreCard}, .${css.networkCard}, .${css.requestCard}`);
@@ -266,7 +272,6 @@ const DiscoverRow = memo(function DiscoverRow({
 				scroller.scrollLeft += (cardRect.right - scrollerRect.right + 50);
 			}
 
-			// Check if near end to load more
 			const cards = scroller.querySelectorAll(`.${css.mediaCard}, .${css.genreCard}, .${css.networkCard}, .${css.requestCard}`);
 			const cardIndex = Array.from(cards).indexOf(card);
 			if (cardIndex >= cards.length - 3) {
@@ -274,7 +279,6 @@ const DiscoverRow = memo(function DiscoverRow({
 			}
 		}
 
-		// Scroll row into view
 		const row = e.target.closest(`.${css.contentRow}`);
 		if (row) {
 			row.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -479,10 +483,11 @@ const JellyseerrDiscover = ({onSelectItem, onSelectGenre, onSelectNetwork, onSel
 
 			const newItems = data.results || [];
 			if (newItems.length > 0) {
-				setRows(prev => ({
-					...prev,
-					[rowId]: [...prev[rowId], ...newItems.slice(0, ITEMS_PER_PAGE)]
-				}));
+				setRows(prev => {
+					const existingIds = new Set(prev[rowId].map(item => item.id));
+					const uniqueNew = newItems.filter(item => !existingIds.has(item.id));
+					return {...prev, [rowId]: [...prev[rowId], ...uniqueNew.slice(0, ITEMS_PER_PAGE)]};
+				});
 				setRowPages(prev => ({...prev, [rowId]: nextPage}));
 				setRowHasMore(prev => ({...prev, [rowId]: newItems.length >= 20}));
 			} else {
