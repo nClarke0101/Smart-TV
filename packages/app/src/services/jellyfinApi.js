@@ -340,11 +340,34 @@ export const api = {
 		request(`/Items/${itemId}/InstantMix?UserId=${currentUser}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,AlbumArtist`),
 
 	getPlaylistItems: (playlistId, limit = 300) =>
-		request(`/Playlists/${playlistId}/Items?UserId=${currentUser}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,MediaSources,MediaStreams,AlbumArtist`),
+		request(`/Playlists/${playlistId}/Items?UserId=${currentUser}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,AlbumArtist`),
 
 	movePlaylistItem: (playlistId, itemId, newIndex) =>
 		request(`/Playlists/${playlistId}/Items/${itemId}/Move/${newIndex}`, {
 			method: 'POST'
+		}),
+
+	getPlaylists: () =>
+		request(`/Users/${currentUser}/Items?IncludeItemTypes=Playlist&Recursive=true&SortBy=SortName&SortOrder=Ascending`),
+
+	createPlaylist: (name, itemIds = []) =>
+		request('/Playlists', {
+			method: 'POST',
+			body: {
+				Name: name,
+				Ids: itemIds,
+				UserId: currentUser
+			}
+		}),
+
+	addToPlaylist: (playlistId, itemIds) =>
+		request(`/Playlists/${playlistId}/Items?Ids=${itemIds.join(',')}`, {
+			method: 'POST'
+		}),
+
+	removeFromPlaylist: (playlistId, entryIds) =>
+		request(`/Playlists/${playlistId}/Items?EntryIds=${entryIds.join(',')}`, {
+			method: 'DELETE'
 		})
 };
 
@@ -526,11 +549,34 @@ export const createApiForServer = (serverUrl, token, userId) => {
 			serverRequest(`/Items/${itemId}/InstantMix?UserId=${userId}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,AlbumArtist`),
 
 		getPlaylistItems: (playlistId, limit = 300) =>
-			serverRequest(`/Playlists/${playlistId}/Items?UserId=${userId}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,MediaSources,MediaStreams,AlbumArtist`),
+			serverRequest(`/Playlists/${playlistId}/Items?UserId=${userId}&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear,AlbumArtist`),
 
 		movePlaylistItem: (playlistId, itemId, newIndex) =>
 			serverRequest(`/Playlists/${playlistId}/Items/${itemId}/Move/${newIndex}`, {
 				method: 'POST'
+			}),
+
+		getPlaylists: () =>
+			serverRequest(`/Users/${userId}/Items?IncludeItemTypes=Playlist&Recursive=true&SortBy=SortName&SortOrder=Ascending`),
+
+		createPlaylist: (name, itemIds = []) =>
+			serverRequest('/Playlists', {
+				method: 'POST',
+				body: {
+					Name: name,
+					Ids: itemIds,
+					UserId: userId
+				}
+			}),
+
+		addToPlaylist: (playlistId, itemIds) =>
+			serverRequest(`/Playlists/${playlistId}/Items?Ids=${itemIds.join(',')}`, {
+				method: 'POST'
+			}),
+
+		removeFromPlaylist: (playlistId, entryIds) =>
+			serverRequest(`/Playlists/${playlistId}/Items?EntryIds=${entryIds.join(',')}`, {
+				method: 'DELETE'
 			}),
 
 		getThemeSongs: (itemId, inheritFromParent = true) =>

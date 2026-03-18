@@ -1503,6 +1503,44 @@
 	color: rgba(255, 255, 255, 0.15);
 }
 
+.toast {
+	position: fixed;
+	bottom: 60px;
+	left: 50%;
+	transform: translateX(-50%);
+	background: rgba(30, 30, 40, 0.9);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	color: #fff;
+	padding: 14px 28px;
+	border-radius: 12px;
+	font-size: 18px;
+	font-weight: 500;
+	z-index: 10000;
+	pointer-events: none;
+	animation: toastLifecycle 3s ease forwards;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+@keyframes toastLifecycle {
+	0% {
+		opacity: 0;
+		transform: translateX(-50%) translateY(16px);
+	}
+	8% {
+		opacity: 1;
+		transform: translateX(-50%) translateY(0);
+	}
+	83% {
+		opacity: 1;
+		transform: translateX(-50%) translateY(0);
+	}
+	100% {
+		opacity: 0;
+		transform: translateX(-50%) translateY(16px);
+	}
+}
+
 /* Trailer Overlay */
 .trailerOverlay {
 	position: fixed;

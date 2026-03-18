@@ -1,0 +1,195 @@
+@accent: var(--accent-color, #00a4dc);
+
+.overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.6);
+	animation: fadeIn 0.2s ease;
+}
+
+.dialog {
+	background: rgba(30, 30, 40, 0.85);
+	backdrop-filter: blur(32px) saturate(1.4);
+	-webkit-backdrop-filter: blur(32px) saturate(1.4);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 24px;
+	padding: 32px 36px;
+	min-width: 460px;
+	max-width: 560px;
+	max-height: 70vh;
+	overflow-y: auto;
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.4),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	animation: scaleIn 0.2s ease;
+}
+
+.title {
+	font-size: 28px;
+	font-weight: 600;
+	color: #fff;
+	margin: 0 0 20px;
+	text-align: center;
+}
+
+.message {
+	font-size: 18px;
+	color: rgba(255, 255, 255, 0.5);
+	text-align: center;
+	margin: 16px 0;
+}
+
+.playlistRow {
+	display: flex;
+	align-items: center;
+	padding: 14px 16px;
+	border-radius: 12px;
+	cursor: pointer;
+	transition: background 0.15s ease;
+	outline: none;
+
+	& + & {
+		margin-top: 4px;
+	}
+
+	&:focus {
+		background: rgba(0, 164, 220, 0.25);
+		box-shadow: inset 0 0 0 2px @accent;
+	}
+
+	&:hover {
+		background: rgba(255, 255, 255, 0.08);
+	}
+}
+
+.playlistIcon {
+	width: 40px;
+	height: 40px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.1);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	margin-right: 14px;
+
+	svg {
+		width: 24px;
+		height: 24px;
+		color: rgba(255, 255, 255, 0.7);
+	}
+}
+
+.playlistInfo {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.playlistName {
+	font-size: 20px;
+	color: #fff;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.playlistCount {
+	font-size: 15px;
+	color: rgba(255, 255, 255, 0.4);
+	margin-top: 2px;
+}
+
+.createForm {
+	padding: 8px 0;
+}
+
+.input {
+	width: 100%;
+	padding: 14px 16px;
+	border-radius: 12px;
+	border: 2px solid rgba(255, 255, 255, 0.15);
+	background: rgba(255, 255, 255, 0.06);
+	color: #fff;
+	font-size: 20px;
+	outline: none;
+	box-sizing: border-box;
+	transition: border-color 0.15s ease;
+
+	&::placeholder {
+		color: rgba(255, 255, 255, 0.3);
+	}
+
+	&:focus {
+		border-color: @accent;
+		background: rgba(255, 255, 255, 0.1);
+	}
+}
+
+.formButtons {
+	display: flex;
+	justify-content: center;
+	margin-top: 20px;
+	gap: 12px;
+}
+
+.btn {
+	padding: 12px 32px;
+	border-radius: 14px;
+	font-size: 18px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	outline: none !important;
+	border: 2px solid transparent;
+	min-width: 120px;
+	background: rgba(255, 255, 255, 0.1);
+	color: #fff;
+
+	&:focus {
+		background: @accent;
+		border-color: #fff;
+		color: #fff;
+	}
+
+	&:hover {
+		background: rgba(255, 255, 255, 0.18);
+	}
+
+	&:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+}
+
+.btnPrimary {
+	background: @accent;
+	color: #fff;
+
+	&:focus {
+		background: lighten(#00a4dc, 10%);
+	}
+}
+
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}

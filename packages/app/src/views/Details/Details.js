@@ -13,6 +13,7 @@ import RatingsRow from '../../components/RatingsRow';
 import {formatDuration, getImageUrl, getBackdropId, getLogoUrl} from '../../utils/helpers';
 import {KEYS, isBackKey} from '../../utils/keys';
 import {fetchVideoStreamUrl} from '../../services/youtubeTrailer';
+import AddToPlaylistModal from '../../components/AddToPlaylistModal';
 
 import css from './Details.module.less';
 
@@ -155,6 +156,8 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 	const [activeModal, setActiveModal] = useState(null);
 	const [trailerOverlay, setTrailerOverlay] = useState(null);
 	const [trailerStreamUrl, setTrailerStreamUrl] = useState(null);
+	const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+	const [toastMessage, setToastMessage] = useState(null);
 
 	// Refs
 	const pageScrollerRef = useRef(null);
@@ -214,14 +217,14 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 						if (nextUpData.Items?.length > 0) {
 							setNextUp(tagWithServerInfo(nextUpData.Items));
 						}
-					} catch (e) { /* Next up not available */ }
+					} catch { /* Next up not available */ }
 				}
 
 				if (data.Type === 'Season') {
 					try {
 						const episodesData = await effectiveApi.getEpisodes(data.SeriesId, data.Id);
 						setEpisodes(tagWithServerInfo(episodesData.Items || []));
-					} catch (e) { /* Episodes not available */ }
+					} catch { /* Episodes not available */ }
 				}
 
 				if (data.Type === 'Episode') {
@@ -230,7 +233,7 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 						try {
 							const episodesData = await effectiveApi.getEpisodes(data.SeriesId, seasonId);
 							setEpisodes(tagWithServerInfo(episodesData.Items || []));
-						} catch (e) { /* Same-season episodes not available */ }
+						} catch { /* Same-season episodes not available */ }
 					}
 				}
 
@@ -243,50 +246,50 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 							Fields: 'PrimaryImageAspectRatio,ProductionYear'
 						});
 						setCollectionItems(tagWithServerInfo(collectionData.Items || []));
-					} catch (e) { /* Collection items not available */ }
+					} catch { /* Collection items not available */ }
 				}
 
 				if (data.Type === 'MusicAlbum') {
 					try {
 						const tracksData = await effectiveApi.getAlbumTracks(data.Id);
 						setAlbumTracks(tagWithServerInfo(tracksData.Items || []));
-					} catch (e) { /* Album tracks not available */ }
+					} catch { /* Album tracks not available */ }
 					try {
 						const similarData = await effectiveApi.getSimilar(itemId);
 						setSimilar(tagWithServerInfo(similarData.Items || []));
-					} catch (e) { /* Similar albums not available */ }
+					} catch { /* Similar albums not available */ }
 				}
 
 				if (data.Type === 'MusicArtist') {
 					try {
 						const albumsData = await effectiveApi.getAlbumsByArtist(data.Id);
 						setArtistAlbums(tagWithServerInfo(albumsData.Items || []));
-					} catch (e) { /* Artist albums not available */ }
+					} catch { /* Artist albums not available */ }
 					try {
 						const similarData = await effectiveApi.getSimilar(itemId);
 						setSimilar(tagWithServerInfo(similarData.Items || []));
-					} catch (e) { /* Similar artists not available */ }
+					} catch { /* Similar artists not available */ }
 				}
 
 				if (data.Type === 'Playlist') {
 					try {
 						const playlistData = await effectiveApi.getPlaylistItems(data.Id);
-						setPlaylistItems(tagWithServerInfo(playlistData.Items || []));
-					} catch (e) { /* Playlist items not available */ }
+						setPlaylistItems(tagWithServerInfo(playlistData?.Items || []));
+					} catch { /* Playlist items not available */ }
 				}
 
 				if (data.Type !== 'Person' && data.Type !== 'BoxSet' && data.Type !== 'MusicAlbum' && data.Type !== 'MusicArtist' && data.Type !== 'Playlist') {
 					try {
 						const similarData = await effectiveApi.getSimilar(itemId);
 						setSimilar(tagWithServerInfo(similarData.Items || []));
-					} catch (e) { /* Similar items not available */ }
+					} catch { /* Similar items not available */ }
 				}
 
 				if (data.Type === 'Person') {
 					try {
 						const filmography = await effectiveApi.getItemsByPerson(itemId, 50);
 						setSimilar(tagWithServerInfo(filmography.Items || []));
-					} catch (e) { /* Filmography not available */ }
+					} catch { /* Filmography not available */ }
 				}
 			} catch (err) {
 				console.error('[Details] Error loading item', err);
@@ -454,7 +457,7 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 				// Do NOT call load() — corrupts Chrome 53 HW decoder.
 				trailerVideoRef.current.src = '';
 				trailerVideoRef.current.removeAttribute('src');
-			} catch (e) { /* ignore */ }
+			} catch { /* ignore */ }
 		}
 		setTrailerOverlay(null);
 		setTrailerStreamUrl(null);
@@ -590,7 +593,7 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 			if (tracks.length > 0) {
 				onPlay?.(tracks[0], false, {audioPlaylist: tracks});
 			}
-		} catch (e) {
+		} catch {
 			if (artistAlbums.length > 0) {
 				onSelectItem?.(artistAlbums[0]);
 			}
@@ -611,7 +614,7 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 				}
 				onPlay?.(shuffled[0], false, {audioPlaylist: shuffled});
 			}
-		} catch (e) { /* ignore */ }
+		} catch { /* ignore */ }
 	}, [item, effectiveApi, onPlay]);
 
 	const handleCastSelect = useCallback((ev) => {
@@ -671,14 +674,29 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 
 		try {
 			await effectiveApi.movePlaylistItem(item.Id, movingItem.PlaylistItemId, newIndex);
-		} catch (e) {
-			console.error('[Details] Failed to reorder playlist item', e);
+		} catch {
 			const revertItems = [...newItems];
 			revertItems.splice(newIndex, 1);
 			revertItems.splice(itemIndex, 0, movingItem);
 			setPlaylistItems(revertItems);
 		}
 	}, [playlistItems, effectiveApi, item]);
+
+	const showToast = useCallback((msg) => {
+		setToastMessage(msg);
+	}, []);
+
+	const handleRemoveFromPlaylist = useCallback(async (entryId) => {
+		if (!entryId || !item) return;
+		const prevItems = [...playlistItems];
+		setPlaylistItems(prev => prev.filter(p => p.PlaylistItemId !== entryId));
+		try {
+			await effectiveApi.removeFromPlaylist(item.Id, [entryId]);
+			showToast('Removed from playlist');
+		} catch {
+			setPlaylistItems(prevItems);
+		}
+	}, [playlistItems, effectiveApi, item, showToast]);
 
 	const handlePlaylistItemKeyDown = useCallback((ev) => {
 		const currentSpottable = ev.target.closest('.spottable');
@@ -698,19 +716,36 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 				ev.stopPropagation();
 				handlePlaylistItemReorder(itemIndex, 1);
 			}
+		} else if (ev.keyCode === 46 || ev.keyCode === 403) {
+			ev.preventDefault();
+			ev.stopPropagation();
+			const plItem = playlistItems[itemIndex];
+			if (plItem?.PlaylistItemId) {
+				handleRemoveFromPlaylist(plItem.PlaylistItemId);
+			}
 		}
-	}, [handlePlaylistItemReorder, playlistItems.length]);
+	}, [handlePlaylistItemReorder, handleRemoveFromPlaylist, playlistItems]);
+
+	const handleOpenPlaylistModal = useCallback(() => {
+		setShowPlaylistModal(true);
+	}, []);
+
+	const handleClosePlaylistModal = useCallback(() => {
+		setShowPlaylistModal(false);
+		window.requestAnimationFrame(() => Spotlight.focus('details-action-buttons'));
+	}, []);
 
 	// Register back handler interceptor for modals
 	useEffect(() => {
 		if (!backHandlerRef) return;
 		backHandlerRef.current = () => {
+			if (showPlaylistModal) { handleClosePlaylistModal(); return true; }
 			if (activeModal) { closeModal(); return true; }
 			if (showMediaInfo) { setShowMediaInfo(false); return true; }
 			return false;
 		};
 		return () => { if (backHandlerRef) backHandlerRef.current = null; };
-	}, [backHandlerRef, activeModal, showMediaInfo, closeModal]);
+	}, [backHandlerRef, activeModal, showMediaInfo, showPlaylistModal, closeModal, handleClosePlaylistModal]);
 
 const handleSectionKeyDown = useCallback((ev) => {
 		const currentSpottable = ev.target.closest('.spottable');
@@ -1130,6 +1165,14 @@ const handleSectionKeyDown = useCallback((ev) => {
 					<span className={css.btnLabel}>Media Info</span>
 				</SpottableDiv>
 			)}
+			<SpottableDiv className={css.btnWrapper} onClick={handleOpenPlaylistModal}>
+				<div className={css.btnAction}>
+					<svg className={css.btnIcon} viewBox="0 -960 960 960" fill="currentColor">
+						<path d="M120-320v-80h480v80H120Zm0-160v-80h480v80H120Zm0-160v-80h480v80H120Zm520 480v-320l240 160-240 160Z"/>
+					</svg>
+				</div>
+				<span className={css.btnLabel}>Add to Playlist</span>
+			</SpottableDiv>
 		</HorizontalContainer>
 	);
 
@@ -1389,7 +1432,7 @@ const handleSectionKeyDown = useCallback((ev) => {
 							</SpottableDiv>
 						</HorizontalContainer>
 
-						<p className={css.playlistHint}>Use ◀ and ▶ to re-order items</p>
+						<p className={css.playlistHint}>◀ ▶ to re-order · DEL to remove</p>
 
 						<div className={`${css.trackList} ${css.playlistItemsList}`} onKeyDown={handlePlaylistItemKeyDown}>
 							{playlistItems.map((plItem, idx) => {
@@ -1430,6 +1473,10 @@ const handleSectionKeyDown = useCallback((ev) => {
 						</div>
 					</div>
 				</Scroller>
+
+				{toastMessage && (
+					<div className={css.toast} onAnimationEnd={() => setToastMessage(null)}>{toastMessage}</div>
+				)}
 			</div>
 		);
 	}
@@ -2071,6 +2118,18 @@ const handleSectionKeyDown = useCallback((ev) => {
 						)}
 					</div>
 				</div>
+			)}
+
+			<AddToPlaylistModal
+				open={showPlaylistModal}
+				itemId={item?.Id}
+				api={effectiveApi}
+				onClose={handleClosePlaylistModal}
+				onSuccess={showToast}
+			/>
+
+			{toastMessage && (
+				<div className={css.toast} onAnimationEnd={() => setToastMessage(null)}>{toastMessage}</div>
 			)}
 		</div>
 	);
