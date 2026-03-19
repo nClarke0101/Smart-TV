@@ -328,6 +328,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 					startPositionTicks: startPosition,
 					maxBitrate: effectiveBitrate,
 					preferTranscode: settings.preferTranscode,
+					forceDirectPlay: settings.forceDirectPlay,
 					item: item,
 					mediaSourceId: initialMediaSourceId,
 					audioStreamIndex: initialAudioIndex != null ? initialAudioIndex : undefined
@@ -609,7 +610,7 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 			pendingSeekMsRef.current = null;
 		};
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [item, resume, selectedQuality, settings.maxBitrate, settings.preferTranscode, settings.subtitleMode, settings.skipIntro]);
+	}, [item, resume, selectedQuality, settings.maxBitrate, settings.preferTranscode, settings.forceDirectPlay, settings.subtitleMode, settings.skipIntro]);
 
 	// ==============================
 	// Controls Auto-hide
